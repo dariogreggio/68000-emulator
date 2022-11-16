@@ -89,7 +89,7 @@
 
 
 const char CopyrightString[]= {'6','8','0','0','0',' ','E','m','u','l','a','t','o','r',' ','v',
-	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '1','5','/','1','1','/','2','2', 0 };
+	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '1','6','/','1','1','/','2','2', 0 };
 
 const char Copyr1[]="(C) Dario's Automation 2022 - G.Dar\xd\xa\x0";
 
@@ -99,7 +99,7 @@ const char Copyr1[]="(C) Dario's Automation 2022 - G.Dar\xd\xa\x0";
 extern BYTE fExit,debug;
 extern BYTE DoIRQ,DoNMI,DoHalt,DoReset,ColdReset;
 extern BYTE ram_seg[];
-extern BYTE rom_seg[],rom_seg2[];
+extern BYTE *rom_seg,*rom_seg2;
 extern BYTE Keyboard[1];
 extern volatile BYTE TIMIRQ,VIDIRQ,KBDIRQ,SERIRQ,RTCIRQ;
 #ifdef QL
@@ -109,6 +109,13 @@ extern union {
   BYTE b[4];
   DWORD d;
   } RTC;
+#elif MICHELEFABBRI
+extern BYTE LCDram[256 /* 4*40 per la geometria, vale così */],LCDfunction,LCDentry,LCDdisplay,LCDcursor;
+extern signed char LCDptr;
+extern BYTE IOExtPortI[4],LedPort[1];
+extern BYTE IOPortI,IOPortO,ClIRQPort,ClWDPort;
+extern BYTE i146818RegR[2],i146818RegW[2],i146818RAM[64];
+extern const unsigned char fontLCD_eu[],fontLCD_jp[];
 #else 
 extern BYTE LCDram[256 /* 4*40 per la geometria, vale così */],LCDfunction,LCDentry,LCDdisplay,LCDcursor;
 extern signed char LCDptr;
@@ -124,7 +131,9 @@ volatile PIC32_RTCC_TIME currentTime={0,0,0};
 const BYTE dayOfMonth[12]={31,28,31,30,31,30,31,31,30,31,30,31};
 
 
-#ifndef QL
+#ifdef MICHELEFABBRI
+#elif QL
+#else
 WORD textColors[16]={BLACK,WHITE,RED,CYAN,MAGENTA,GREEN,BLUE,YELLOW,
 	ORANGE,BROWN,BRIGHTRED,DARKGRAY,GRAY128,LIGHTGREEN,BRIGHTCYAN,LIGHTGRAY};
 /*COLORREF Colori[16]={
@@ -335,6 +344,136 @@ int UpdateScreen(SWORD rowIni, SWORD rowFin) {
     }
   }  
 
+#elif MICHELEFABBRI
+int UpdateScreen(WORD c) {
+  int x,y,x1,y1;
+  SWORD color;
+	UINT8 i,j,lcdMax;
+	BYTE *fontPtr,*lcdPtr;
+  static BYTE cursorState=0,cursorDivider=0;
+
+#define LCD_MAX_X 20
+#define LCD_MAX_Y 4
+#define DIGIT_X_SIZE 6
+#define DIGIT_Y_SIZE 8
+  
+  
+//  i8255RegR[0] |= 0x80; mah... fare?? v. di là
+
+  y=(_TFTHEIGHT-(LCD_MAX_Y*DIGIT_Y_SIZE))/2 +20;
+  
+//	fillRect(x,y,DIGIT_X_SIZE+3,DIGIT_Y_SIZE+1,BLACK);
+	gfx_drawRect((_TFTWIDTH-(LCD_MAX_X*DIGIT_X_SIZE))/2-1,(_TFTHEIGHT-(LCD_MAX_Y*DIGIT_Y_SIZE))/2 +16,
+          DIGIT_X_SIZE*20+4,DIGIT_Y_SIZE*4+7,LIGHTGRAY);
+  
+  if(c)
+    color=WHITE;
+  else
+    color=LIGHTGRAY;
+
+  
+//        LCDdisplay=7; //test cursore
+
+  cursorDivider++;
+  if(cursorDivider>=11) {
+    cursorDivider=0;
+    cursorState=!cursorState;
+    }
+          
+        
+  if(LCDdisplay & 4) {
+
+  lcdMax=LCDfunction & 8 ? LCD_MAX_Y : LCD_MAX_Y/2;
+  for(y1=0; y1<LCD_MAX_Y; y1++) {
+    x=(_TFTWIDTH-(LCD_MAX_X*DIGIT_X_SIZE))/2;
+    
+//    LCDram[0]='A';LCDram[1]='1';LCDram[2]=1;LCDram[3]=40;
+//    LCDram[21]='Z';LCDram[23]='8';LCDram[25]='0';LCDram[27]=64;LCDram[39]='.';
+//    LCDram[84+4]='C';LCDram[84+5]='4';
+    
+    
+    switch(y1) {    // 4x20 
+      case 0:
+        lcdPtr=&LCDram[0];
+        break;
+      case 1:
+        lcdPtr=&LCDram[0x40];
+        break;
+      case 2:
+        lcdPtr=&LCDram[20];
+        break;
+      case 3:
+        lcdPtr=&LCDram[0x40+20];
+        break;
+      }
+
+    for(x1=0; x1<LCD_MAX_X; x1++) {
+//      UINT8 ch;
+  
+//      ch=*lcdPtr;
+//      if(LCDdisplay & 2) {
+//	      if(!(LCDdisplay & 1) || cursorState) { questo era per avere il bloccone, fisso o lampeggiante, ma in effetti sui LCD veri è diverso!
+      if((lcdPtr-&LCDram[0]) == LCDptr) {
+        if(LCDdisplay & 2) {
+          for(j=6; j>1; j--) {    //lineetta bassa E FONT TYPE QUA??
+            drawPixel(x+x1*6+j, y+7, color);
+            }
+          }
+        if((LCDdisplay & 1) && cursorState) {
+          int k=LCDdisplay & 2 ? 7 : 8;
+
+          for(i=0; i<k; i++) {    //
+
+            if(LCDfunction & 4)   // font type...
+              ;
+
+            for(j=6; j>1; j--) {    //+ piccolo..
+              drawPixel(x+x1*6+j, y+i, color);
+              }
+            }
+          }
+        goto skippa;
+        }
+      
+      fontPtr=fontLCD_eu+((UINT16)*lcdPtr)*10;
+      for(i=0; i<8; i++) {
+        UINT8 line;
+
+        line = pgm_read_byte(fontPtr+i);
+
+        if(LCDfunction & 4)   // font type...
+          ;
+        
+        for(j=6; j>0; j--, line >>= 1) {
+          if(line & 0x1)
+            drawPixel(x+x1*6+j, y+i, color);
+          else
+            drawPixel(x+x1*6+j, y+i, BLACK);
+          }
+        }
+      
+skippa:
+      lcdPtr++;
+      }
+      
+    y+=DIGIT_Y_SIZE;
+    }
+    }
+  
+//  i8255RegR[0] &= ~0x7f;
+  
+//  LuceLCD=i8255RegW[1] &= 0x80; fare??
+
+  
+	gfx_drawRect(4,41,_TFTWIDTH-9,13,ORANGE);
+  for(i=0,j=1; i<8; i++,j<<=1) {
+    if(LedPort[0] & j)
+      fillCircle(10+i*9,47,3,RED);
+    else
+      fillCircle(10+i*9,47,3,DARKGRAY);
+    }
+          
+	}
 #else
 
 int UpdateScreen(WORD c) {
@@ -605,6 +744,7 @@ int main(void) {
 #endif
 
   
+#ifdef QL
 #if 0
 	const unsigned short int QL_MINERVA_BIN[]= {    // QL_minerva_M198.bin
   // motorola è BigEndian, qua lascio little-endian in modo che me le trovo "giuste" in esecuzione 4C02 ecc
@@ -6740,7 +6880,22 @@ const unsigned short int QL_JS_BIN[]= {    // QL_js.bin
   /*BFF0:*/ 0x6CB5, 0x0000, 0x52B3, 0x2E31, 0x3031, 0x0200, 0x534A, 0x2020, 
 	};
 
-  memcpy(rom_seg,QL_JS_BIN,0xc000);
+//  memcpy(rom_seg,QL_JS_BIN,0xc000);
+  rom_seg=QL_JS_BIN;
+#endif
+
+#if MICHELEFABBRI
+const unsigned short int ROM_BIN[]= {    // codice michele fabbri fb 11/22 per led ecc
+  /*80000:*/ 0x0200, 0x0000, 0x0800, 0x0800,  0xFC13, 0x0000, 0x0000, 0x0001, 
+  /*80010:*/ 0xF913, 0x0000, 0x0001, 0x0700, 0x00C0, 0x3C22, 0x0000, 0x007D, 
+  /*80020:*/ 0x8153, 0x0066, 0xFCFF, 0x3952, 0x0000, 0x0001, 0xE260, 
+
+  };
+
+  rom_seg=ROM_BIN;
+#endif
+
+
 
 #ifndef QL
   IOPortI=0b10111111;   // dip=1111; puls=1; Comx=1
