@@ -89,7 +89,7 @@
 
 
 const char CopyrightString[]= {'6','8','0','0','0',' ','E','m','u','l','a','t','o','r',' ','v',
-	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '1','6','/','1','1','/','2','2', 0 };
+	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '1','7','/','1','1','/','2','2', 0 };
 
 const char Copyr1[]="(C) Dario's Automation 2022 - G.Dar\xd\xa\x0";
 
@@ -113,7 +113,6 @@ extern union {
 extern BYTE LCDram[256 /* 4*40 per la geometria, vale così */],LCDfunction,LCDentry,LCDdisplay,LCDcursor;
 extern signed char LCDptr;
 extern BYTE IOExtPortI[4],LedPort[1];
-extern BYTE IOPortI,IOPortO,ClIRQPort,ClWDPort;
 extern BYTE i146818RegR[2],i146818RegW[2],i146818RAM[64];
 extern const unsigned char fontLCD_eu[],fontLCD_jp[];
 #else 
@@ -358,7 +357,7 @@ int UpdateScreen(WORD c) {
 #define DIGIT_Y_SIZE 8
   
   
-//  i8255RegR[0] |= 0x80; mah... fare?? v. di là
+    LED3 = 1;
 
   y=(_TFTHEIGHT-(LCD_MAX_Y*DIGIT_Y_SIZE))/2 +20;
   
@@ -460,12 +459,11 @@ skippa:
     }
     }
   
-//  i8255RegR[0] &= ~0x7f;
   
 //  LuceLCD=i8255RegW[1] &= 0x80; fare??
 
   
-	gfx_drawRect(4,41,_TFTWIDTH-9,13,ORANGE);
+	gfx_drawRect(4,41,_TFTWIDTH-8,13,ORANGE);
   for(i=0,j=1; i<8; i++,j<<=1) {
     if(LedPort[0] & j)
       fillCircle(10+i*9,47,3,RED);
@@ -473,6 +471,7 @@ skippa:
       fillCircle(10+i*9,47,3,DARKGRAY);
     }
           
+    LED3 = 0;     // 2mS 17/11/22
 	}
 #else
 
@@ -736,8 +735,8 @@ int main(void) {
   
 	gfx_fillRect(3,_TFTHEIGHT-20,_TFTWIDTH-6,16,BLACK);
  	setTextColor(BLUE);
-	LCDXY(3,14);
-	gfx_print("(emulating 4x20 LCD)");
+	LCDXY(1,14);
+	gfx_print("(emulating 8Led/4x20LCD)");
 
 
 //#endif
@@ -6886,10 +6885,9 @@ const unsigned short int QL_JS_BIN[]= {    // QL_js.bin
 
 #if MICHELEFABBRI
 const unsigned short int ROM_BIN[]= {    // codice michele fabbri fb 11/22 per led ecc
-  /*80000:*/ 0x0200, 0x0000, 0x0800, 0x0800,  0xFC13, 0x0000, 0x0000, 0x0001, 
-  /*80010:*/ 0xF913, 0x0000, 0x0001, 0x0700, 0x00C0, 0x3C22, 0x0000, 0x007D, 
-  /*80020:*/ 0x8153, 0x0066, 0xFCFF, 0x3952, 0x0000, 0x0001, 0xE260, 
-
+  /*00:*/ 0x0200, 0x0000, 0x0000, 0x0800, 0xFC13, 0x0000,   0x0100, 0x0000, 
+  /*10:*/ 0xF913, 0x0100, 0x0000, 0x0700, 0x00C0, 0x3C22, 0x0000, 0x007D, 
+  /*20:*/ 0x8153, 0x0066, 0xFCFF, 0x3952, 0x0100, 0x0000, 0xE260, 
   };
 
   rom_seg=ROM_BIN;
@@ -6897,7 +6895,9 @@ const unsigned short int ROM_BIN[]= {    // codice michele fabbri fb 11/22 per l
 
 
 
-#ifndef QL
+#ifdef QL
+#elif MICHELEFABBRI
+#else
   IOPortI=0b10111111;   // dip=1111; puls=1; Comx=1
 #endif
         
