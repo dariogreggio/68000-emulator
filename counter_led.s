@@ -1,20 +1,20 @@
 ;-----------------------------------------------------------
 ; Title      : RAM counter
-; Written by : Michele Fabbri
-; Date       : November 1 2002
+; Written by : Michele Fabbri, modificato da GD per ROM/RAM mapping
+; Date       : November 1-17 2002
 ; Description: In memory counter shown on the LED port
 ;-----------------------------------------------------------
-; D1 pause counter
+; D1 pause counter		;	https://oldwww.nvg.ntnu.no/amiga/MC680x0_Sections/mc68000timing.HTML
 
 ; Memory map
-RAM_START       EQU $00000
+RAM_START       EQU $10000
 VEC_TABLE_END   EQU $00100  ; last vector table address + 1
 RAM_END         EQU $20000  ; last RAM address + 1
 LED_PORT        EQU $7C000
-ROM             EQU $80000
+ROM             EQU $00000
 
 ; Directives
-DELAY       EQU 32000
+DELAY       EQU 32000		; ~145mS @ 4MHz
 
 ; ROM
     ORG ROM
@@ -31,8 +31,8 @@ LOOP:
     MOVE.B  COUNTER, LED_PORT
     MOVE.L  #DELAY, D1
 PAUSE:
-    SUB.L   #1,D1
-    BNE.L   PAUSE
+    SUB.L   #1,D1           ; 8 cicli
+    BNE.L   PAUSE           ; 8/10 cicli
     ADD.B   #1,COUNTER
     BRA     LOOP
 
