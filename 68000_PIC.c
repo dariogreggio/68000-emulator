@@ -89,7 +89,7 @@
 
 
 const char CopyrightString[]= {'6','8','0','0','0',' ','E','m','u','l','a','t','o','r',' ','v',
-	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '1','7','/','1','1','/','2','2', 0 };
+	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '2','0','/','1','1','/','2','2', 0 };
 
 const char Copyr1[]="(C) Dario's Automation 2022 - G.Dar\xd\xa\x0";
 
@@ -252,15 +252,18 @@ int UpdateScreen(SWORD rowIni, SWORD rowFin) {
 #ifdef REAL_SIZE
   setAddrWindow(0,rowIni,_width,rowFin-rowIni);
   if(VideoMode & 0b00001000) {    //512
-    p1=&ram_seg[VideoAddress-RAM_START] + (rowIni*HORIZ_SIZE);
-    for(py=rowIni; py<rowFin; py++) {
-      for(px=0; px<HORIZ_SIZE; px++) {
+    for(py=rowIni; py < min(128,rowFin); py++) {
+      p1=((BYTE*)&ram_seg[VideoAddress-RAM_START]) + ((rowIni+py)*HORIZ_SIZE);
+      for(px=0; px<40; px++) {      // 40*4=160
         chl=*p1++;
         chh=*p1++;
-        writedata16x2(graphColors512[chl & 0b10000000 ? 1 : 0 | chh & 0b10000000 ? 2 : 0],
-                graphColors512[chl & 0b00100000 ? 1 : 0 | chh & 0b00100000 ? 2 : 0]);
-        writedata16x2(graphColors512[chl & 0b00001000 ? 1 : 0 | chh & 0b00001000 ? 2 : 0],
-                graphColors512[chl & 0b0000010 ? 1 : 0 | chh & 0b00000010 ? 2 : 0]);
+//High byte (A0=0)              Low Byte (A0=1) Mode
+//D7 D6 D5 D4 D3 D2 D1 D0       D7 D6 D5 D4 D3 D2 D1 D0
+//G7 G6 G5 G4 G3 G2 G1 G0       R7 R6 R5 R4 R3 R2 R1 R0 512-pixel
+        writedata16x2(graphColors512[(chl & 0b10000000 ? 1 : 0) | (chh & 0b10000000 ? 2 : 0)],
+                graphColors512[(chl & 0b00100000 ? 1 : 0) | (chh & 0b00100000 ? 2 : 0)]);
+        writedata16x2(graphColors512[(chl & 0b00001000 ? 1 : 0) | (chh & 0b00001000 ? 2 : 0)],
+                graphColors512[(chl & 0b0000010 ? 1 : 0) | (chh & 0b00000010 ? 2 : 0)]);
         // ogni 2 byte 8 pixel
         }
   #ifdef USA_SPI_HW
@@ -269,15 +272,23 @@ int UpdateScreen(SWORD rowIni, SWORD rowFin) {
       }
     }
   else {
-    p1=&ram_seg[VideoAddress-RAM_START] + (rowIni*HORIZ_SIZE);
-    for(py=rowIni; py<rowFin; py++) {
-      for(px=0; px<HORIZ_SIZE; px++) {
+    for(py=rowIni; py < min(128,rowFin); py++) {
+      p1=((BYTE*)&ram_seg[VideoAddress-RAM_START]) + ((rowIni+py)*HORIZ_SIZE);
+      for(px=0; px<40; px++) {
         chl=*p1++;
         chh=*p1++;
-        writedata16x2(graphColors256[((chl & 0b10000000) >> 7) | ((chh & 0b11000000) >> 6)],
-                graphColors256[((chl & 0b00100000) >> 5) | ((chh & 0b00110000) >> 4)]);
-        writedata16x2(graphColors256[((chl & 0b00001000) >> 3) | ((chh & 0b00001100) >> 2)],
-                graphColors256[((chl & 0b00000010) >> 1) | ((chh & 0b00000011))]);
+        
+//High byte (A0=0)              Low Byte (A0=1) Mode
+//D7 D6 D5 D4 D3 D2 D1 D0       D7 D6 D5 D4 D3 D2 D1 D0
+//G3 F3 G2 F2 G1 F1 G0 F0       R3 B3 R2 B2 R1 B1 R0 B0 256-pixel
+        
+        // inserire FLASH
+        writedata16x2(graphColors256[((chl & 0b10000000) >> 7) | ((chh & 0b11000000) >> 5)],
+                graphColors256[((chl & 0b00100000) >> 5) | ((chh & 0b00110000) >> 3)]);
+        writedata16x2(graphColors256[((chl & 0b00001000) >> 3) | ((chh & 0b00001100) >> 1)],
+                graphColors256[((chl & 0b00000010) >> 1) | ((chh & 0b00000011) << 1)]);
+        // forse riarrangiare la tabella colori per facilitare shift...
+        
         // ogni 2 byte 4 pixel
         xtra++;
         }
@@ -289,7 +300,7 @@ int UpdateScreen(SWORD rowIni, SWORD rowFin) {
 #else
   setAddrWindow(0,rowIni/2,_width,(rowFin-rowIni)/2);
   if(VideoMode & 0b00001000) {    //512
-    p1=&ram_seg[VideoAddress-RAM_START] + (rowIni*HORIZ_SIZE);
+    p1=&ram_seg[VideoAddress-RAM_START] + (rowIni*512);
     for(py=rowIni; py<rowFin; py+=2) {    // 256 linee diventa 128
       xtra=0;
       for(px=0; px<HORIZ_SIZE; px+=2) {    // 512 pixel diventano 128...
@@ -382,85 +393,85 @@ int UpdateScreen(WORD c) {
         
   if(LCDdisplay & 4) {
 
-  lcdMax=LCDfunction & 8 ? LCD_MAX_Y : LCD_MAX_Y/2;
-  for(y1=0; y1<LCD_MAX_Y; y1++) {
-    x=(_TFTWIDTH-(LCD_MAX_X*DIGIT_X_SIZE))/2;
-    
-//    LCDram[0]='A';LCDram[1]='1';LCDram[2]=1;LCDram[3]=40;
-//    LCDram[21]='Z';LCDram[23]='8';LCDram[25]='0';LCDram[27]=64;LCDram[39]='.';
-//    LCDram[84+4]='C';LCDram[84+5]='4';
-    
-    
-    switch(y1) {    // 4x20 
-      case 0:
-        lcdPtr=&LCDram[0];
-        break;
-      case 1:
-        lcdPtr=&LCDram[0x40];
-        break;
-      case 2:
-        lcdPtr=&LCDram[20];
-        break;
-      case 3:
-        lcdPtr=&LCDram[0x40+20];
-        break;
-      }
+    lcdMax=LCDfunction & 8 ? LCD_MAX_Y : LCD_MAX_Y/2;
+    for(y1=0; y1<LCD_MAX_Y; y1++) {
+      x=(_TFTWIDTH-(LCD_MAX_X*DIGIT_X_SIZE))/2;
 
-    for(x1=0; x1<LCD_MAX_X; x1++) {
-//      UINT8 ch;
-  
-//      ch=*lcdPtr;
-//      if(LCDdisplay & 2) {
-//	      if(!(LCDdisplay & 1) || cursorState) { questo era per avere il bloccone, fisso o lampeggiante, ma in effetti sui LCD veri è diverso!
-      if((lcdPtr-&LCDram[0]) == LCDptr) {
-        if(LCDdisplay & 2) {
-          for(j=6; j>1; j--) {    //lineetta bassa E FONT TYPE QUA??
-            drawPixel(x+x1*6+j, y+7, color);
-            }
-          }
-        if((LCDdisplay & 1) && cursorState) {
-          int k=LCDdisplay & 2 ? 7 : 8;
+  //    LCDram[0]='A';LCDram[1]='1';LCDram[2]=1;LCDram[3]=40;
+  //    LCDram[21]='Z';LCDram[23]='8';LCDram[25]='0';LCDram[27]=64;LCDram[39]='.';
+  //    LCDram[84+4]='C';LCDram[84+5]='4';
 
-          for(i=0; i<k; i++) {    //
 
-            if(LCDfunction & 4)   // font type...
-              ;
+      switch(y1) {    // 4x20 
+        case 0:
+          lcdPtr=&LCDram[0];
+          break;
+        case 1:
+          lcdPtr=&LCDram[0x40];
+          break;
+        case 2:
+          lcdPtr=&LCDram[20];
+          break;
+        case 3:
+          lcdPtr=&LCDram[0x40+20];
+          break;
+        }
 
-            for(j=6; j>1; j--) {    //+ piccolo..
-              drawPixel(x+x1*6+j, y+i, color);
+      for(x1=0; x1<LCD_MAX_X; x1++) {
+  //      UINT8 ch;
+
+  //      ch=*lcdPtr;
+  //      if(LCDdisplay & 2) {
+  //	      if(!(LCDdisplay & 1) || cursorState) { questo era per avere il bloccone, fisso o lampeggiante, ma in effetti sui LCD veri è diverso!
+        if((lcdPtr-&LCDram[0]) == LCDptr) {
+          if(LCDdisplay & 2) {
+            for(j=6; j>1; j--) {    //lineetta bassa E FONT TYPE QUA??
+              drawPixel(x+x1*6+j, y+7, color);
               }
             }
-          }
-        goto skippa;
-        }
-      
-      fontPtr=fontLCD_eu+((UINT16)*lcdPtr)*10;
-      for(i=0; i<8; i++) {
-        UINT8 line;
+          if((LCDdisplay & 1) && cursorState) {
+            int k=LCDdisplay & 2 ? 7 : 8;
 
-        line = pgm_read_byte(fontPtr+i);
+            for(i=0; i<k; i++) {    //
 
-        if(LCDfunction & 4)   // font type...
-          ;
-        
-        for(j=6; j>0; j--, line >>= 1) {
-          if(line & 0x1)
-            drawPixel(x+x1*6+j, y+i, color);
-          else
-            drawPixel(x+x1*6+j, y+i, BLACK);
+              if(LCDfunction & 4)   // font type...
+                ;
+
+              for(j=6; j>1; j--) {    //+ piccolo..
+                drawPixel(x+x1*6+j, y+i, color);
+                }
+              }
+            }
+          goto skippa;
           }
-        }
-      
+
+        fontPtr=fontLCD_eu+((UINT16)*lcdPtr)*10;
+        for(i=0; i<8; i++) {
+          UINT8 line;
+
+          line = pgm_read_byte(fontPtr+i);
+
+          if(LCDfunction & 4)   // font type...
+            ;
+
+          for(j=6; j>0; j--, line >>= 1) {
+            if(line & 0x1)
+              drawPixel(x+x1*6+j, y+i, color);
+            else
+              drawPixel(x+x1*6+j, y+i, BLACK);
+            }
+          }
+
 skippa:
-      lcdPtr++;
+        lcdPtr++;
+        }
+
+      y+=DIGIT_Y_SIZE;
       }
-      
-    y+=DIGIT_Y_SIZE;
-    }
     }
   
   
-//  LuceLCD=i8255RegW[1] &= 0x80; fare??
+
 
   
 	gfx_drawRect(4,41,_TFTWIDTH-8,13,ORANGE);
@@ -6885,9 +6896,22 @@ const unsigned short int QL_JS_BIN[]= {    // QL_js.bin
 
 #if MICHELEFABBRI
 const unsigned short int ROM_BIN[]= {    // codice michele fabbri fb 11/22 per led ecc
-  /*00:*/ 0x0200, 0x0000, 0x0000, 0x0800, 0xFC13, 0x0000,   0x0100, 0x0000, 
+#if 1
+  /*00:*/ 0x0200, 0x0000, 0x0000, 0x0800, 0xFC33, 0x0100, 0x0100, 0x0000, // rotate
+  /*10:*/ 0xF913, 0x0100, 0x0000, 0x0700, 0x00C0, 0x3C22, 0x0000, 
+#ifndef USING_SIMULATOR
+          0x409C,
+#else
+          0x4000 /*0x409C*/, 
+#endif
+  /*20:*/ 0x8153, 0x0066, 0xFCFF, 0xF9E7, 0x0100, 0x0000, 0x0061, 0x0400, 
+          0xDE60 , 0x754E
+#endif
+#if 0
+  /*00:*/ 0x0200, 0x0000, 0x0000, 0x0800, 0xFC13, 0x0000,   0x0100, 0x0000,  // counter
   /*10:*/ 0xF913, 0x0100, 0x0000, 0x0700, 0x00C0, 0x3C22, 0x0000, 0x007D, 
-  /*20:*/ 0x8153, 0x0066, 0xFCFF, 0x3952, 0x0100, 0x0000, 0xE260, 
+  /*20:*/ 0x8153, 0x0066, 0xFCFF, 0x3952, 0x0100, 0x0000, 0xE260
+#endif
   };
 
   rom_seg=ROM_BIN;
@@ -7426,45 +7450,94 @@ wait_kbd: ;
   IFS0CLR = _IFS0_T3IF_MASK;
   }
 
-// ---------------------------------------------------------------------------------------
-// declared static in case exception condition would prevent
-// auto variable being created
-static enum {
-	EXCEP_IRQ = 0,			// interrupt
-	EXCEP_AdEL = 4,			// address error exception (load or ifetch)
-	EXCEP_AdES,				// address error exception (store)
-	EXCEP_IBE,				// bus error (ifetch)
-	EXCEP_DBE,				// bus error (load/store)
-	EXCEP_Sys,				// syscall
-	EXCEP_Bp,				// breakpoint
-	EXCEP_RI,				// reserved instruction
-	EXCEP_CpU,				// coprocessor unusable
-	EXCEP_Overflow,			// arithmetic overflow
-	EXCEP_Trap,				// trap (possible divide by zero)
-	EXCEP_IS1 = 16,			// implementation specfic 1
-	EXCEP_CEU,				// CorExtend Unuseable
-	EXCEP_C2E				// coprocessor 2
-  } _excep_code;
 
-static unsigned int _epc_code;
+/*******************************************************************************
+  Exception Reason Data
+
+
+  Remarks:
+    These global static items are used instead of local variables in the
+    _general_exception_handler function because the stack may not be available
+    if an exception has occurred.
+*/
+
+// Code identifying the cause of the exception (CP0 Cause register).
+static unsigned int _excep_code;
+
+// Address of instruction that caused the exception.
 static unsigned int _excep_addr;
 
-void __attribute__((weak)) _general_exception_handler(uint32_t __attribute__((unused)) code, uint32_t __attribute__((unused)) address) {
-  }
+// Pointer to the string describing the cause of the exception.
+static char *_cause_str;
 
-void __attribute__((nomips16,used)) _general_exception_handler_entry(void) {
+// Array identifying the cause (indexed by _exception_code).
+static const char *cause[] = {
+    "Interrupt",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Load/fetch address error",
+    "Store address error",
+    "Instruction bus error",
+    "Data bus error",
+    "Syscall",
+    "Breakpoint",
+    "Reserved instruction",
+    "Coprocessor unusable",
+    "Arithmetic overflow",
+    "Trap",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved",
+    "Reserved"
+  };
+
+
+
+// *****************************************************************************
+// *****************************************************************************
+// Section: Exception Handling
+// *****************************************************************************
+// *****************************************************************************
+
+/*******************************************************************************
+  Function:
+    void _general_exception_handler ( void )
+
+  Summary:
+    Overrides the XC32 _weak_ _general_exception_handler.
+
+  Description:
+    This function overrides the XC32 default _weak_ _general_exception_handler.
+
+  Remarks:
+    Refer to the XC32 User's Guide for additional information.
+ */
+void _general_exception_handler(void) {
+    /* Mask off Mask of the ExcCode Field from the Cause Register
+    Refer to the MIPs Software User's manual */
   
-	asm volatile("mfc0 %0,$13" : "=r" (_epc_code));
-	asm volatile("mfc0 %0,$14" : "=r" (_excep_addr));
+    _excep_code = (_CP0_GET_CAUSE() & 0x0000007C) >> 2;
+    _excep_addr = _CP0_GET_EPC();
+    _cause_str  = (char *)cause[_excep_code];
+//    SYS_DEBUG_PRINT(SYS_ERROR_FATAL, "\n\rGeneral Exception %s (cause=%d, addr=%x).\n\r",
+//                    _cause_str, _excep_code, _excep_addr);
 
-	_excep_code = (_epc_code & 0x0000007C) >> 2;
 
-  _general_exception_handler(_excep_code, _excep_addr);
+  	LCDCls();
+  	setTextColorBG(BRIGHTRED,BLACK);
+    LCDXY(0,0);
+    gfx_print(_cause_str);    // e _excep_addr ?
 
-	while (1)	{
-		// Examine _excep_code to identify the type of exception
-		// Examine _excep_addr to find the address that caused the exception
+    while(1)    {
+//        SYS_DEBUG_BreakPoint();
+        Nop();
+        Nop();
+        __delay_ms(2500);
+      LED1^=1;
     }
   }
+
 
 

@@ -2,6 +2,8 @@
 //https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&ved=2ahUKEwjc3b6Lwar2AhUPTcAKHRVnCmUQFnoECAUQAQ&url=https%3A%2F%2Fweb.njit.edu%2F~rosensta%2Fclasses%2Farchitecture%2F252software%2Fcode.pdf&usg=AOvVaw0awr9hRKXycE2-kghhbC3Y
 //https://onlinedisassembler.com/odaweb/
 
+#warning credo che manchi ancora uno SCALE nei PC-indexed mode
+
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -45,8 +47,9 @@ union {
 BYTE ram_seg[RAM_SIZE];
 BYTE *rom_seg;
 BYTE i68681RegR[16],i68681RegW[16];
-BYTE LCDram[256 /*4*40*/],LCDCGDARAM=0,LCDCGram[64],LCDCGptr=0,LCDfunction,LCDdisplay,
-	LCDentry=2 /* I/D */,LCDcursor;			// emulo LCD text come Z80net
+BYTE LCDPortR[2],LCDPortW[2];
+BYTE LCDram[256 /*4*40*/],LCDCGDARAM=0,LCDCGram[64],LCDCGptr=0,LCDfunction=0,LCDdisplay=0,
+	LCDentry=2 /* I/D */,LCDcursor=0;			// emulo LCD text come Z80net
 signed char LCDptr=0;
 BYTE IOExtPortI[4],LedPort[1];
 BYTE i146818RegR[2],i146818RegW[2],i146818RAM[64];
@@ -108,10 +111,11 @@ union __attribute__((__packed__)) PIPE {
 	} Pipe2;
 
 
-#define IO_BASE_ADDRESS 0xc000
-#define LCD_BOARD_ADDRESS 0x10
+#define IO_BASE_ADDRESS 0x7c000
+#define LCD_BOARD_ADDRESS 0x7c100
+#define RTC_BASE_ADDRESS 0x18000
 // emulo display LCD testo (4x20, 4x20 o altro) come su scheda Z80:
-//  all'indirizzo+0 c'è la porta dati (in/out), a +2 i fili C/D, RW e E (E2)
+//  all'indirizzo+0 c'è la porta comandi (fili C/D, RW e E (E2)), a indirizzo+1 la porta dati (in/out)
 #define IO_BOARD_ADDRESS 0x0
 
 BYTE GetValue(DWORD t) {
@@ -150,6 +154,16 @@ $18000  Real-time clock byte 0  Real-time clock reset*/
 
   
 #elif MICHELEFABBRI
+  
+  else if(t==IO_BASE_ADDRESS) {        //   led
+    i=LedPort[0];      // OCCHIO nel suo hw non c'è! io lo metto per test lettura/rotate
+    }
+  else if(t==LCD_BOARD_ADDRESS) {        //   lcd
+    i=LCDPortR[0];
+    }
+  else if(t==LCD_BOARD_ADDRESS+1) {        //
+    i=LCDPortR[1];
+    }
   
 #else
   
@@ -393,7 +407,7 @@ SWORD GetPipe(DWORD t) {
 	}
 
 DWORD GetPipeExt(DWORD t) {
-// NON è sempre 6 byte dopo! ma uso cmq le word aggiunteive di Pipe2, e restituisco...
+// NON è sempre 6 byte dopo! ma uso cmq le word aggiuntive di Pipe2, e restituisco...
   if(t & 1) {
     DoAddressExcep=1;
     return;
@@ -431,7 +445,7 @@ void PutValue(DWORD t,BYTE t1) {
     if(VideoMode & 0b10000000)
       VideoAddress=0x28000;
     else
-      VideoAddress=0x20000;
+      VideoAddress=VIDEO_ADDRESS_BASE;
     }
   else if(t>=0x18000 && t<0x18004) {        //   RTC
     RTC.b[t-0x18000]=t1;
@@ -446,9 +460,72 @@ void PutValue(DWORD t,BYTE t1) {
 
     }
 #elif MICHELEFABBRI
-  else if(t==0x7c000) {        //   led
+  else if(t==IO_BASE_ADDRESS) {        //   led
     LedPort[0]=t1;
     }
+  else if(t==LCD_BOARD_ADDRESS) {        //   lcd
+    LCDPortW[0]=LCDPortR[0]=t1;
+    }
+  else if(t==LCD_BOARD_ADDRESS+1) {        //
+    if(LCDPortW[0] & 4 && !(t1 & 4)) {   // quando E scende
+      // in teoria dovremmo salvare in R[0] solo in questo istante, la lettura... ma ok! (v. sopra)
+      LCDPortR[1] |= 0x80;   // Busy, tanto per :)
+      if(LCDPortW[0] & 1)	{		// se dati
+        if(!LCDCGDARAM) {
+          LCDram[LCDptr]=LCDPortW[1];
+          if(LCDentry & 2) {
+            LCDptr++;
+            if(LCDptr >= 0x7f)			// parametrizzare! o forse no, fisso max 127
+              LCDptr=0;
+            }
+          else {
+            LCDptr--;
+            if(LCDptr < 0)			// parametrizzare!
+              LCDptr=0x7f;    // CONTROLLARE
+            }
+          }
+        else {
+          LCDCGram[LCDCGptr++]=LCDPortW[1];
+          LCDCGptr &= 0x3f;
+          }
+        }
+      else {									// se comandi https://www.sparkfun.com/datasheets/LCD/HD44780.pdf
+        if(LCDPortW[1] <= 1) {			// CLS/home
+          LCDptr=0;
+          LCDentry |= 2;		// ripristino INCremento, dice
+          memset(LCDram,' ',sizeof(LCDram) /* 4*40 */);
+          }
+        else if(LCDPortW[1] <= 3) {			// home
+          LCDptr=0;
+          }
+        else if(LCDPortW[1] <= 7) {			// entry mode ecc
+          LCDentry=LCDPortW[1] & 3;
+          }
+        else if(LCDPortW[1] <= 15) {			// display on-off ecc
+          LCDdisplay=LCDPortW[1] & 7;
+          }
+        else if(LCDPortW[1] <= 31) {			// cursor set, increment & shift off
+          LCDcursor=LCDPortW[1] & 15;
+          }
+        else if(LCDPortW[1] <= 63) {			// function set, 2-4 linee
+          LCDfunction=LCDPortW[1] & 31;
+          }
+        else if(LCDPortW[1] <= 127) {			// CG RAM addr set
+          LCDCGptr=LCDPortW[1] & 0x3f;			// 
+          LCDPortR[1] = LCDram[LCDCGptr] | 0x80;    // finire!
+          LCDCGDARAM=1;// user defined char da 0x40
+          }
+        else {				// >0x80 = cursor set
+          LCDptr=LCDPortW[1] & 0x7f;			// PARAMETRIZZARE e gestire 2 Enable x 4x40!
+          LCDPortR[1] = LCDram[LCDptr] | 0x80;
+          LCDCGDARAM=0;
+          }
+        }
+      }
+    LCDPortR[1] &= 0x7f;
+    LCDPortW[1]=LCDPortW[1]=t1;
+    }
+
 #else
   
   else if(t>=IO_BASE_ADDRESS && t<(IO_BASE_ADDRESS+0x20)) {        //   display mappato qua (su 68000 non ci sono IN & OUT)
@@ -668,8 +745,9 @@ void PutShortValue(DWORD t,SWORD t1) {
     return;
     }
 	if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {		// ZX80,81
-	  ram_seg[t++-RAM_START]=HIBYTE(t1);
-	  ram_seg[t-RAM_START]=LOBYTE(t1);
+		t-=RAM_START;
+	  ram_seg[t++]=HIBYTE(t1);
+	  ram_seg[t]=LOBYTE(t1);
 		}
 #ifdef QL
   else if(t>=0x18000 && t<0x18004) {        //   RTC
@@ -692,10 +770,11 @@ void PutIntValue(DWORD t,DWORD t1) {
 // pare di no..    DoAddressExcep=1;
     }
 	if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {		// ZX80,81
-	  ram_seg[t++-RAM_START]=HIBYTE(HIWORD(t1));
-	  ram_seg[t++-RAM_START]=LOBYTE(HIWORD(t1));
-	  ram_seg[t++-RAM_START]=HIBYTE(LOWORD(t1));
-	  ram_seg[t-RAM_START]=LOBYTE(LOWORD(t1));
+		t-=RAM_START;
+	  ram_seg[t++]=HIBYTE(HIWORD(t1));
+	  ram_seg[t++]=LOBYTE(HIWORD(t1));
+	  ram_seg[t++]=HIBYTE(LOWORD(t1));
+	  ram_seg[t]=LOBYTE(LOWORD(t1));
 		}
 #ifdef QL
 #elif MICHELEFABBRI
@@ -744,11 +823,15 @@ enum ADDRESSING_MODES {
   ADDRPDECADD =0b00100000,
   ADDRDISPADD =0b00101000,
   ADDRIDXADD = 0b00110000,
-  PCDISPADD  = 0b00111000,
+  PCDISPADD  = 0b00111000,  // bah lascio cmq i sinonimi...
   PCIDXADD   = 0b00111000,
-  ABSOLUTESADD=0b00111000,
-  ABSOLUTELADD=0b00111000,
-  IMMEDIATEADD=0b00111000
+  ABSOLUTEADD =0b00111000,
+  IMMEDIATEADD=0b00111000,
+  ABSSSUBADD  =0b000,    // è al posto di Register
+  ABSLSUBADD  =0b001,    // 
+  PCIDXSUBADD =0b010,    // 
+  PCDISPSUBADD=0b011,    // 
+  IMMSUBADD   =0b100 
   };
 #define OPERAND_SIZE (LOBYTE(Pipe1) & 0b11000000)
 #define	BYTE_SIZE 0x00
@@ -831,7 +914,11 @@ int c=0;
 	do {
 
 		c++;
+#ifdef QL
+		if(!(c & 0x00003fff)) {
+#else
 		if(!(c & 0x0000ffff)) {
+#endif
       ClrWdt();
 // yield()
 #ifndef USING_SIMULATOR
@@ -909,9 +996,23 @@ int c=0;
 		if(IPL > _f.SR.IRQMask) {
       FC=0b111;   // supervisor, area programma, eccezione
       DoStop=0;
-      PutIntValue(_f.SR.Supervisor ? --_ssp : --_sp,_pc); // low word prima
+      if(_f.SR.Supervisor) {
+        _ssp-=4;
+        PutIntValue(_ssp,_pc); // low word prima
+        }
+      else {
+        _sp-=4;
+        PutIntValue(_sp,_pc); // low word prima
+        }
       _fsup=_f;
-      PutIntValue(_f.SR.Supervisor ? --_ssp : --_sp,_fsup.w);
+      if(_f.SR.Supervisor) {
+        _ssp-=2;
+        PutShortValue(_ssp,_fsup.w);
+        }
+      else {
+        _sp-=2;
+        PutShortValue(_sp,_fsup.w);
+        }
       _f.SR.IRQMask=IPL;
       _f.SR.Supervisor=1;     // non mi è chiaro se sono nesteed o no...
         
@@ -975,7 +1076,7 @@ int c=0;
 		switch(HIBYTE(Pipe1)) {
 			case 0x00:   // ORI
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
             switch(LOBYTE(Pipe1)) {
               case 0x3c:
                 _f.CCR.b |= Pipe2.b.l;
@@ -986,56 +1087,61 @@ int c=0;
     						_pc+=2;
                 if(_f.SR.Supervisor) {
                   _f.SR.w |= Pipe2.x.l;
+	                goto noAggFlag;
                   }
                 else {
                   res3.b.l=8;
                   goto doTrap;
                   }
-                goto noAggFlag;
 	              break;
               default:
-                if(!ABSOLUTEADD_SIZE) {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res3.b.l = GetValue(Pipe2.w) | Pipe2.b.l;
-                      PutValue(Pipe2.w, res3.b.l);
-		                  _pc+=4;
-                      break;
-                    case WORD_SIZE:
-                      res3.x = GetShortValue(Pipe2.w) | Pipe2.x.l;
-                      PutShortValue(Pipe2.w, res3.x);
-		                  _pc+=4;
-                      break;
-                    case DWORD_SIZE:
-                      GetPipeExt(_pc);
-                      res3.d = Pipe2.d;
-                      res3.d |= GetIntValue(LOWORD(GetPipeExt(_pc)));
-                      PutIntValue(LOWORD(GetPipeExt(_pc)), res3.d);	// usare dd[]
-                      _pc+=6;
-                      break;
-                    }
-                  }
-                else {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res3.b.l = Pipe2.b.l;
-                      res3.b.l |= GetValue(GetPipeExt(_pc));
-                      PutValue(Pipe2.dd[1],res3.b.l);
-		                  _pc+=6;
-                      break;
-                    case WORD_SIZE:
-                      res3.x = Pipe2.x.l;
-                      res3.x |= GetShortValue(GetPipeExt(_pc));
-                      PutShortValue(Pipe2.dd[1],res3.x);
-		                  _pc+=6;
-                      break;
-                    case DWORD_SIZE:
-                      res3.d = Pipe2.d;
-                      res3.d |= GetIntValue(GetPipeExt(_pc)); 
-                      PutIntValue(Pipe2.dd[1],res3.d);
-		                  _pc+=8;
-                      break;
-                    }
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res3.b.l = GetValue(Pipe2.w) | Pipe2.b.l;
+                        PutValue(Pipe2.w, res3.b.l);
+                        _pc+=4;
+                        break;
+                      case WORD_SIZE:
+                        res3.x = GetShortValue(Pipe2.w) | Pipe2.x.l;
+                        PutShortValue(Pipe2.w, res3.x);
+                        _pc+=4;
+                        break;
+                      case DWORD_SIZE:
+                        res3.d = Pipe2.d;
+                        res3.d |= GetIntValue(LOWORD(GetPipeExt(_pc)));
+                        PutIntValue(LOWORD(Pipe2.dd[1]), res3.d);
+                        _pc+=6;
+                        break;
+                      }
+                    break;
+                  case ABSLSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res3.b.l = Pipe2.b.l;
+                        res3.b.l |= GetValue(GetPipeExt(_pc));
+                        PutValue(Pipe2.dd[1],res3.b.l);
+                        _pc+=6;
+                        break;
+                      case WORD_SIZE:
+                        res3.x = Pipe2.x.l;
+                        res3.x |= GetShortValue(GetPipeExt(_pc));
+                        PutShortValue(Pipe2.dd[1],res3.x);
+                        _pc+=6;
+                        break;
+                      case DWORD_SIZE:
+                        res3.d = Pipe2.d;
+                        res3.d |= GetIntValue(GetPipeExt(_pc)); 
+                        PutIntValue(Pipe2.dd[1],res3.d);
+                        _pc+=8;
+                        break;
+                      }
+                    break;
+                  case PCIDXSUBADD:   // qua no!
+                  case PCDISPSUBADD:
+                  case IMMSUBADD:
+                    break;
                   }
                 break;
               }
@@ -1165,14 +1271,12 @@ int c=0;
 								_pc+=4;
                 break;
               case DWORD_SIZE:
-                GetPipeExt(_pc);
-                res3.d = Pipe2.d;
                 if(!DISPLACEMENT_SIZE) {
-                  res3.d |= GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h);
+                  res3.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h) | LOWORD(GetPipeExt(_pc));
                   PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h, res3.d);
                   }
                 else {
-                  res3.d |= GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h);
+                  res3.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h) | LOWORD(GetPipeExt(_pc));
                   PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h, res3.d);
                   }
 								_pc+=6;
@@ -1188,10 +1292,12 @@ aggFlag:
             _f.CCR.Sign=!!(res3.b.l & 0x80);
             break;
           case WORD_SIZE:
+aggFlag2:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x8000);
             break;
           case DWORD_SIZE:
+aggFlag4:
             _f.CCR.Zero=!res3.d;
             _f.CCR.Sign=!!(res3.d & 0x80000000);
             break;
@@ -1234,35 +1340,49 @@ noAggFlag:
           }
         else {
           switch(ADDRESSING) {      // BTST ecc
-            case ABSOLUTELADD:
-              if(!ABSOLUTEADD_SIZE) {
-                res2.b.l = GetValue(Pipe2.x.h);
-                _pc+=6;
-                }
-              else {
-                GetPipeExt(_pc);
-                res2.b.l = GetValue(Pipe2.x.h);
-                _pc+=6;
+            case ABSOLUTEADD:
+              switch(ABSOLUTEADD_SIZE) {
+                case ABSSSUBADD:
+                  res2.b.l = GetValue(Pipe2.x.h);
+                  _pc+=4;
+                  break;
+                case ABSLSUBADD:
+                  res2.b.l = GetValue(Pipe2.d);
+                  _pc+=6;
+                  break;
+                case PCIDXSUBADD:   // (D16,PC) SOLO BTST!!
+                  // quindi filtrarli o ce ne sbattiamo??
+                  res2.b.l = GetValue(_pc+(signed short int)Pipe2.w);
+                  _pc+=4;
+                  break;
+                case PCDISPSUBADD:   // (D8,Xn,PC) SOLO BTST!!
+                  res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                  _pc+=4;
+                  break;
+                case IMMSUBADD:
+                  break;
                 }
               break;
             case DATAREGADD:   // Dn
               res2.b.l = WORKING_REG_D.b.b0;
-              _pc+=4;
+              _pc+=2;
               break;
             case ADDRADD:   // (An)
               res2.b.l = GetValue(WORKING_REG_A.x);
-              _pc+=4;
+              _pc+=2;
               break;
             case ADDRPINCADD:   // (An)+
               res2.b.l = GetValue(WORKING_REG_A.x);
+              _pc+=2;
               break;
             case ADDRPDECADD:   // -(An)
               WORKING_REG_A.x--;
               res2.b.l = GetValue(WORKING_REG_A.x);
+              _pc+=2;
               break;
             case ADDRDISPADD:   // (D16,An)
               res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
-              _pc+=2;
+              _pc+=4;
               break;
             case ADDRIDXADD:   // (D8,An,Xn)
               if(!DISPLACEMENT_SIZE) {
@@ -1271,12 +1391,11 @@ noAggFlag:
               else {
                 res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
                 }
-              _pc+=6;
+              _pc+=4;
               break;
             }
 
   doBit:
-              // OCCHIO SE Pipe1 è cambiata! v. sopra indirizzamenti lunghi, e verificare spostamenti/ofs pc
           if(HIBYTE(Pipe1) & 0b00000001) {    // 32bit, solo con registro Dn
             res3.d = res1.d & res2.d;
             _f.CCR.Zero = !res3.d;
@@ -1287,33 +1406,42 @@ noAggFlag:
             }
           switch(LOBYTE(Pipe1) & 0b11000000) {
             case 0x00:    // BTST
+              res3.b.l = res2.b.l & res1.b.l;
               goto doBit2;
               break;
             case 0x40:    // BCHG
-              res2.b.l ^= res1.b.l;
+              res3.b.l = res2.b.l ^ res1.b.l;
               break;
             case 0x80:    // BCLR
-              res2.b.l &= ~res1.b.l;
+              res3.b.l = res2.b.l & ~res1.b.l;
               break;
             case 0xc0:    // BSET
-              res2.b.l |= res1.b.l;
+              res3.b.l = res2.b.l | res1.b.l;
               break;
             }
           switch(ADDRESSING) {
-            case ABSOLUTELADD:
-              if(!ABSOLUTEADD_SIZE)
-                if(HIBYTE(Pipe1) & 0b00000001) {    // 32bit, solo con registro Dn
-                  PutIntValue(Pipe2.x.h, res3.d);
-                  }
-                else {
-                  PutValue(Pipe2.x.h, res3.b.l);
-                  }
-              else
-                if(HIBYTE(Pipe1) & 0b00000001) {    //
-                  PutIntValue(Pipe2.x.h, res3.d);
-                  }
-                else {
-                  PutValue(Pipe2.x.h, res3.b.l);
+            case ABSOLUTEADD:
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    if(HIBYTE(Pipe1) & 0b00000001) {    // 32bit, solo con registro Dn
+                      PutIntValue(Pipe2.w, res3.d);
+                      }
+                    else {
+                      PutValue(Pipe2.w, res3.b.l);
+                      }
+                    break;
+                  case ABSLSUBADD:
+                    if(HIBYTE(Pipe1) & 0b00000001) {    //
+                      PutIntValue(Pipe2.d, res3.d);
+                      }
+                    else {
+                      PutValue(Pipe2.d, res3.b.l);
+                      }
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC) SOLO BTST!
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                  case IMMSUBADD:
+                    break;
                   }
               break;
             case DATAREGADD:   // Dn
@@ -1367,22 +1495,22 @@ noAggFlag:
                 }
               else {
                 if(!DISPLACEMENT_SIZE) {
-                  PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, res3.b.l);
+                  PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 else {
-                  PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.b.l);
+                  PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 }
               break;
             }
         
-doBit2: ;
+doBit2:   _f.CCR.Zero=!res3.b.l;
           }
 				break;
         
 			case 0x02:   // ANDI
         switch(ADDRESSING) {
-          case ABSOLUTELADD:    // abs
+          case ABSOLUTEADD:    // abs
             switch(LOBYTE(Pipe1)) {
               case 0x3c:
                 _f.CCR.b &= Pipe2.b.l;
@@ -1393,55 +1521,61 @@ doBit2: ;
       					_pc+=2;
                 if(_f.SR.Supervisor) {
                   _f.SR.w &= Pipe2.x.l;
+			            goto noAggFlag;
                   }
                 else {
                   res3.b.l=8;
                   goto doTrap;
                   }
-		            goto noAggFlag;
                 break;
               default:
-                if(!ABSOLUTEADD_SIZE) {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res3.b.l = GetValue(Pipe2.x.h) & Pipe2.b.l;
-                      PutValue(Pipe2.x.h, res3.b.l);
-                      _pc+=4;
-                      break;
-                    case WORD_SIZE:
-                      res3.x = GetShortValue(Pipe2.x.h) & Pipe2.x.l;
-                      PutShortValue(Pipe2.x.h, res3.x);
-                      _pc+=4;
-                      break;
-                    case DWORD_SIZE:
-                      res3.d = Pipe2.d;
-                      res3.d &= GetIntValue(LOWORD(GetPipeExt(_pc)));
-                      PutIntValue(LOWORD(GetPipeExt(_pc)),res3.d);	// usare dd[]
-                      _pc+=6;
-                      break;
-                    }
-                  }
-                else {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res3.b.l = Pipe2.b.l;
-                      res3.b.l &= GetValue(GetPipeExt(_pc));
-                      PutValue(Pipe2.dd[1],res3.b.l);
-                      _pc+=6;
-                      break;
-                    case WORD_SIZE:
-                      res3.x = Pipe2.x.l;
-                      res3.x &= GetShortValue(GetPipeExt(_pc));
-                      PutShortValue(Pipe2.dd[1],res3.x);
-                      _pc+=6;
-                      break;
-                    case DWORD_SIZE:
-                      res3.d = Pipe2.d;
-                      res3.d &= GetIntValue(GetPipeExt(_pc)); 
-                      PutIntValue(Pipe2.dd[1],res3.d);
-                      _pc+=8;
-                      break;
-                    }
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res3.b.l = GetValue(Pipe2.w) & Pipe2.b.l;
+                        PutValue(Pipe2.w,res3.b.l);
+                        _pc+=4;
+                        break;
+                      case WORD_SIZE:
+                        res3.x = GetShortValue(Pipe2.w) & Pipe2.x.l;
+                        PutShortValue(Pipe2.w, res3.x);
+                        _pc+=4;
+                        break;
+                      case DWORD_SIZE:
+                        res3.d = Pipe2.d;
+                        res3.d &= GetIntValue(LOWORD(GetPipeExt(_pc)));
+                        PutIntValue(LOWORD(Pipe2.dd[1]),res3.d);
+                        _pc+=6;
+                        break;
+                      }
+                    break;
+                  case ABSLSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res3.b.l = Pipe2.b.l;
+                        res3.b.l &= GetValue(GetPipeExt(_pc));
+                        PutValue(Pipe2.dd[1],res3.b.l);
+                        _pc+=6;
+                        break;
+                      case WORD_SIZE:
+                        res3.x = Pipe2.x.l;
+                        res3.x &= GetShortValue(GetPipeExt(_pc));
+                        PutShortValue(Pipe2.dd[1],res3.x);
+                        _pc+=6;
+                        break;
+                      case DWORD_SIZE:
+                        res3.d = Pipe2.d;
+                        res3.d &= GetIntValue(GetPipeExt(_pc)); 
+                        PutIntValue(Pipe2.dd[1],res3.d);
+                        _pc+=8;
+                        break;
+                      }
+                    break;
+                  case PCIDXSUBADD:   // qua no!
+                  case PCDISPSUBADD:
+                  case IMMSUBADD:
+                    break;
                   }
                 break;
               }
@@ -1550,34 +1684,34 @@ doBit2: ;
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                res3.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h) & Pipe2.b.l;
-                PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h, res3.b.l);
-                }
+                  res3.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h) & Pipe2.b.l;
+                  PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h, res3.b.l);
+                  }
                 else {
-                res3.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h) & Pipe2.b.l;
-                PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h, res3.b.l);
+                  res3.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h) & Pipe2.b.l;
+                  PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h, res3.b.l);
                   }
 								_pc+=4;
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                res3.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h) & Pipe2.x.l;
-                PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h, res3.x);
-                }
+                  res3.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h) & Pipe2.x.l;
+                  PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h, res3.x);
+                  }
                 else {
-                res3.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h) & Pipe2.x.l;
-                PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h, res3.x);
+                  res3.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h) & Pipe2.x.l;
+                  PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h, res3.x);
                   }
 								_pc+=4;
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                res3.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h) & Pipe2.d;
-                PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h, res3.d);
-                }
+                  res3.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h) & Pipe2.d;
+                  PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h, res3.d);
+                  }
                 else {
-                res3.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h) & Pipe2.d;
-                PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h, res3.d);
+                  res3.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h) & Pipe2.d;
+                  PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h, res3.d);
                   }
 								_pc+=6;
                 break;
@@ -1589,57 +1723,63 @@ doBit2: ;
 
 			case 0x04:   // SUBI
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            if(!ABSOLUTEADD_SIZE) {
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = GetValue(Pipe2.w);
-                  res2.b.l = Pipe2.b.l;
-                  res3.b.l = res1.b.l - res2.b.l;
-                  PutValue(Pipe2.w, res3.b.l);
-                  _pc+=4;
-                  break;
-                case WORD_SIZE:
-                  res1.x = GetShortValue(Pipe2.w);
-                  res2.x = Pipe2.x.l;
-                  res3.x = res1.x - res2.x;
-                  PutShortValue(Pipe2.w, res3.x);
-                  _pc+=4;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = Pipe2.d;
-                  res2.d = GetIntValue(LOWORD(GetPipeExt(_pc)));
-                  res3.d = res1.d - res2.d;
-                  PutIntValue(LOWORD(GetPipeExt(_pc)),res3.d);	// usare dd[]
-                  _pc+=6;
-                  break;
-                }
-							}
-            else {
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = Pipe2.b.l;
-                  res1.b.l = GetValue(GetPipeExt(_pc));
-                  res3.b.l = res1.b.l - res2.b.l;
-                  PutValue(Pipe2.dd[1],res3.b.l);
-                  _pc+=6;
-                  break;
-                case WORD_SIZE:
-                  res2.x = Pipe2.x.l;
-                  res1.x = GetShortValue(GetPipeExt(_pc));
-                  res3.x = res1.x - res2.x;
-                  PutShortValue(Pipe2.dd[1], res3.x);
-                  _pc+=6;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = Pipe2.d;
-                  res1.d = GetIntValue(GetPipeExt(_pc)); 
-                  res3.d = res1.d - res2.d;
-                  PutIntValue(Pipe2.dd[1],res3.d);
-                  _pc+=8;
-                  break;
-                }
-							}
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(Pipe2.w);
+                    res2.b.l = Pipe2.b.l;
+                    res3.b.l = res1.b.l - res2.b.l;
+                    PutValue(Pipe2.w, res3.b.l);
+                    _pc+=4;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(Pipe2.w);
+                    res2.x = Pipe2.x.l;
+                    res3.x = res1.x - res2.x;
+                    PutShortValue(Pipe2.w, res3.x);
+                    _pc+=4;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = Pipe2.d;
+                    res2.d = GetIntValue(LOWORD(GetPipeExt(_pc)));
+                    res3.d = res1.d - res2.d;
+                    PutIntValue(LOWORD(Pipe2.dd[1]),res3.d);
+                    _pc+=6;
+                    break;
+                  }
+                break;
+              case ABSLSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = Pipe2.b.l;
+                    res1.b.l = GetValue(GetPipeExt(_pc));
+                    res3.b.l = res1.b.l - res2.b.l;
+                    PutValue(Pipe2.dd[1],res3.b.l);
+                    _pc+=6;
+                    break;
+                  case WORD_SIZE:
+                    res2.x = Pipe2.x.l;
+                    res1.x = GetShortValue(GetPipeExt(_pc));
+                    res3.x = res1.x - res2.x;
+                    PutShortValue(Pipe2.dd[1], res3.x);
+                    _pc+=6;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = Pipe2.d;
+                    res1.d = GetIntValue(GetPipeExt(_pc)); 
+                    res3.d = res1.d - res2.d;
+                    PutIntValue(Pipe2.dd[1],res3.d);
+                    _pc+=8;
+                    break;
+                  }
+                break;
+              case PCIDXSUBADD:   // qua no!
+              case PCDISPSUBADD:
+              case IMMSUBADD:
+                break;
+              }
             break;
           case DATAREGADD:   // Dn
             switch(OPERAND_SIZE) {
@@ -1779,7 +1919,7 @@ doBit2: ;
                   res2.b.l = Pipe2.b.l;
                   res3.b.l = res1.b.l - res2.b.l;
                   PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, res3.b.l);
-                }
+                  }
                 else {
                   res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
                   res2.b.l = Pipe2.b.l;
@@ -1826,58 +1966,64 @@ doBit2: ;
 
 			case 0x06:   // ADDI
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            if(!ABSOLUTEADD_SIZE) {
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = GetValue(Pipe2.x.h);
-                  res2.b.l = Pipe2.b.l;
-                  res3.b.l = res1.b.l + res2.b.l;
-                  PutValue(Pipe2.x.h, res3.b.l);
-                  _pc+=4;
-                  break;
-                case WORD_SIZE:
-                  res1.x = GetShortValue(Pipe2.x.h);
-                  res2.x = Pipe2.x.l;
-                  res3.x = res1.x + res2.x;
-                  PutShortValue(Pipe2.x.h, res3.x);
-                  _pc+=4;
-                  break;
-                case DWORD_SIZE:
-                  GetPipeExt(_pc);
-                  res2.d = Pipe2.d;
-                  res2.d = GetIntValue(LOWORD(GetPipeExt(_pc)));
-                  res3.d = res1.d + res2.d;
-                  PutIntValue(LOWORD(GetPipeExt(_pc)),res3.d);	// usare dd[]
-                  _pc+=6;
-                  break;
-                }
-							}
-            else {
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = Pipe2.b.l;
-                  res1.b.l = GetValue(GetPipeExt(_pc));
-                  res3.b.l = res1.b.l + res2.b.l;
-                  PutValue(Pipe2.dd[1],res3.b.l);
-                  _pc+=6;
-                  break;
-                case WORD_SIZE:
-                  res2.x = Pipe2.x.l;
-                  res1.x = GetShortValue(GetPipeExt(_pc));
-                  res3.x = res1.x + res2.x;
-                  PutShortValue(Pipe2.dd[1],res3.x);
-                  _pc+=6;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = Pipe2.d;
-                  res1.d = GetIntValue(GetPipeExt(_pc)); 
-                  res3.d = res1.d + res2.d;
-                  PutIntValue(Pipe2.dd[1],res3.d);
-                  _pc+=8;
-                  break;
-                }
-							}
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(Pipe2.x.h);
+                    res2.b.l = Pipe2.b.l;
+                    res3.b.l = res1.b.l + res2.b.l;
+                    PutValue(Pipe2.x.h, res3.b.l);
+                    _pc+=4;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(Pipe2.x.h);
+                    res2.x = Pipe2.x.l;
+                    res3.x = res1.x + res2.x;
+                    PutShortValue(Pipe2.x.h, res3.x);
+                    _pc+=4;
+                    break;
+                  case DWORD_SIZE:
+                    GetPipeExt(_pc);
+                    res2.d = Pipe2.d;
+                    res2.d = GetIntValue(LOWORD(GetPipeExt(_pc)));
+                    res3.d = res1.d + res2.d;
+                    PutIntValue(LOWORD(Pipe2.dd[1]),res3.d);
+                    _pc+=6;
+                    break;
+                  }
+                break;
+              case ABSLSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = Pipe2.b.l;
+                    res1.b.l = GetValue(GetPipeExt(_pc));
+                    res3.b.l = res1.b.l + res2.b.l;
+                    PutValue(Pipe2.dd[1],res3.b.l);
+                    _pc+=6;
+                    break;
+                  case WORD_SIZE:
+                    res2.x = Pipe2.x.l;
+                    res1.x = GetShortValue(GetPipeExt(_pc));
+                    res3.x = res1.x + res2.x;
+                    PutShortValue(Pipe2.dd[1],res3.x);
+                    _pc+=6;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = Pipe2.d;
+                    res1.d = GetIntValue(GetPipeExt(_pc)); 
+                    res3.d = res1.d + res2.d;
+                    PutIntValue(Pipe2.dd[1],res3.d);
+                    _pc+=8;
+                    break;
+                  }
+                break;
+              case PCIDXSUBADD:
+              case PCDISPSUBADD:
+              case IMMSUBADD:
+                break;
+              }
             break;
           case DATAREGADD:   // Dn
             switch(OPERAND_SIZE) {
@@ -2017,7 +2163,7 @@ doBit2: ;
                   res2.b.l = Pipe2.b.l;
                   res3.b.l = res1.b.l + res2.b.l;
                   PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, res3.b.l);
-                }
+                  }
                 else {
                   res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
                   res2.b.l = Pipe2.b.l;
@@ -2064,7 +2210,7 @@ doBit2: ;
 
 			case 0x0a:   // EORI
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
             switch(LOBYTE(Pipe1)) {
               case 0x3c:
                 _f.CCR.b ^= Pipe2.b.l;
@@ -2075,56 +2221,61 @@ doBit2: ;
       					_pc+=4;
                 if(_f.SR.Supervisor) {
                   _f.SR.w ^= Pipe2.x.l;
+			            goto noAggFlag;
                   }
                 else {
                   res3.b.l=8;
                   goto doTrap;
                   }
-                goto noAggFlag;
                 break;
               default:
-                if(!ABSOLUTEADD_SIZE) {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res3.b.l = GetValue(Pipe2.w) ^ Pipe2.b.l;
-                      PutValue(Pipe2.w, res3.b.l);
-                      _pc+=4;
-                      break;
-                    case WORD_SIZE:
-                      res3.x = GetShortValue(Pipe2.w) ^ Pipe2.x.l;
-                      PutShortValue(Pipe2.w, res3.x);
-                      _pc+=4;
-                      break;
-                    case DWORD_SIZE:
-                      GetPipeExt(_pc);
-                      res3.d = Pipe2.d;
-                      res3.d ^= GetIntValue(LOWORD(GetPipeExt(_pc)));
-                      PutIntValue(LOWORD(GetPipeExt(_pc)),res3.d);	// usare dd[]
-                      _pc+=6;
-                      break;
-                    }
-                  }
-                else {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res3.b.l = Pipe2.b.l;
-                      res3.b.l ^= GetValue(GetPipeExt(_pc));
-                      PutValue(Pipe2.dd[1], res3.b.l);
-                      _pc+=6;
-                      break;
-                    case WORD_SIZE:
-                      res3.x = Pipe2.x.l;
-                      res3.x ^= GetShortValue(GetPipeExt(_pc));
-                      PutShortValue(Pipe2.dd[1], res3.x);
-                      _pc+=6;
-                      break;
-                    case DWORD_SIZE:
-                      res3.d = Pipe2.d;
-                      res3.d ^= GetIntValue(GetPipeExt(_pc)); 
-                      PutIntValue(Pipe2.dd[1], res3.d);
-                      _pc+=8;
-                      break;
-                    }
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res3.b.l = GetValue(Pipe2.w) ^ Pipe2.b.l;
+                        PutValue(Pipe2.w, res3.b.l);
+                        _pc+=4;
+                        break;
+                      case WORD_SIZE:
+                        res3.x = GetShortValue(Pipe2.w) ^ Pipe2.x.l;
+                        PutShortValue(Pipe2.w, res3.x);
+                        _pc+=4;
+                        break;
+                      case DWORD_SIZE:
+                        res3.d = Pipe2.d;
+                        res3.d ^= GetIntValue(LOWORD(GetPipeExt(_pc)));
+                        PutIntValue(LOWORD(Pipe2.dd[1]),res3.d);
+                        _pc+=6;
+                        break;
+                      }
+                    break;
+                  case ABSLSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res3.b.l = Pipe2.b.l;
+                        res3.b.l ^= GetValue(GetPipeExt(_pc));
+                        PutValue(Pipe2.dd[1], res3.b.l);
+                        _pc+=6;
+                        break;
+                      case WORD_SIZE:
+                        res3.x = Pipe2.x.l;
+                        res3.x ^= GetShortValue(GetPipeExt(_pc));
+                        PutShortValue(Pipe2.dd[1], res3.x);
+                        _pc+=6;
+                        break;
+                      case DWORD_SIZE:
+                        res3.d = Pipe2.d;
+                        res3.d ^= GetIntValue(GetPipeExt(_pc)); 
+                        PutIntValue(Pipe2.dd[1], res3.d);
+                        _pc+=8;
+                        break;
+                      }
+                    break;
+                  case PCIDXSUBADD:   // qua no!
+                  case PCDISPSUBADD:
+                  case IMMSUBADD:
+                    break;
                   }
                 break;
               }
@@ -2245,7 +2396,7 @@ doBit2: ;
                 if(!DISPLACEMENT_SIZE) {
 									res3.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h) ^ Pipe2.x.l;
 									PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h, res3.x);
-                }
+                  }
                 else {
 									res3.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h) ^ Pipe2.x.l;
 									PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h, res3.x);
@@ -2271,48 +2422,50 @@ doBit2: ;
 
 			case 0x0c:   // CMPI
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            if(!ABSOLUTEADD_SIZE) {
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = GetValue(Pipe2.w);
-                  res2.b.l = Pipe2.b.l;
-                  _pc+=4;
-                  break;
-                case WORD_SIZE:
-                  res1.x = GetShortValue(Pipe2.w);
-                  res2.x = Pipe2.x.l;
-                  _pc+=4;
-                  break;
-                case DWORD_SIZE:
-                  GetPipeExt(_pc);
-                  res2.d = Pipe2.d;
-                  res1.d = GetIntValue(LOWORD(GetPipeExt(_pc)));
-                  _pc+=6;
-                  break;
-                }
-              }
-            else {
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  GetPipeExt(_pc);
-                  res2.b.l = Pipe2.b.l;
-                  res1.b.l = GetValue(GetPipeExt(_pc));
-                  _pc+=6;
-                  break;
-                case WORD_SIZE:
-                  GetPipeExt(_pc);
-                  res2.x = Pipe2.x.l;
-                  res1.x = GetShortValue(GetPipeExt(_pc));
-                  _pc+=6;
-                  break;
-                case DWORD_SIZE:
-                  GetPipeExt(_pc);
-                  res2.d = Pipe2.d;
-                  res1.d = GetIntValue(GetPipeExt(_pc)); 
-                  _pc+=8;
-                  break;
-                }
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(Pipe2.w);
+                    res2.b.l = Pipe2.b.l;
+                    _pc+=4;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(Pipe2.w);
+                    res2.x = Pipe2.x.l;
+                    _pc+=4;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = Pipe2.d;
+                    res1.d = GetIntValue(LOWORD(GetPipeExt(_pc)));
+                    _pc+=6;
+                    break;
+                  }
+                break;
+              case ABSLSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = Pipe2.b.l;
+                    res1.b.l = GetValue(GetPipeExt(_pc));
+                    _pc+=6;
+                    break;
+                  case WORD_SIZE:
+                    res2.x = Pipe2.x.l;
+                    res1.x = GetShortValue(GetPipeExt(_pc));
+                    _pc+=6;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = Pipe2.d;
+                    res1.d = GetIntValue(GetPipeExt(_pc)); 
+                    _pc+=8;
+                    break;
+                  }
+                break;
+              case PCIDXSUBADD:     // qua no!
+              case PCDISPSUBADD:
+              case IMMSUBADD:
+                break;
               }
             break;
           case DATAREGADD:   // Dn
@@ -2512,17 +2665,25 @@ aggFlagC4:
       case 0x1e:
       case 0x1f:
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
             switch(ABSOLUTEADD_SIZE) {
-              case 0:
+              case ABSSSUBADD:
                 res3.b.l = GetValue(Pipe2.x.h);
                 _pc+=2;
                 break;
-              case 1:
+              case ABSLSUBADD:
                 res3.b.l = GetValue(Pipe2.d);
                 _pc+=4;
                 break;
-              case 4:
+              case PCIDXSUBADD:   // (D16,PC)
+                res3.b.l = GetValue(_pc+(signed short int)Pipe2.w);
+                _pc+=2;
+                break;
+              case PCDISPSUBADD:   // (D8,Xn,PC)
+                res3.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                _pc+=2;
+                break;
+              case IMMSUBADD:
                 res3.b.l = Pipe2.b.l;
                 _pc+=2;
                 break;
@@ -2559,19 +2720,19 @@ aggFlagC4:
             break;
           }
         switch(ADDRESSING2) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
             switch(ABSOLUTEADD_SIZE2) {
-              case 0:
+              case ABSSSUBADD:
                 PutValue(LOWORD(GetPipeExt(_pc)),res3.b.l);
                 _pc+=2;
                 break;
-              case 1:
+              case ABSLSUBADD:
                 PutValue(GetPipeExt(_pc),res3.b.l);
                 _pc+=4;
                 break;
-              case 4:
-                PutValue(GetPipeExt(_pc),res3.b.l);
-                _pc+=4;
+              case PCIDXSUBADD:   // (D16,PC) qua no!
+              case PCDISPSUBADD:   // (D8,Xn,PC) qua no!
+              case IMMSUBADD:
                 break;
               }
             break;
@@ -2622,19 +2783,27 @@ aggFlagC4:
       case 0x2e:
       case 0x2f:
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
             switch(ABSOLUTEADD_SIZE) {
-              case 0:
+              case ABSSSUBADD:
                 res3.d = GetIntValue(Pipe2.x.h);
                 _pc+=2;
                 break;
-              case 1:
+              case ABSLSUBADD:
                 GetPipeExt(_pc);
                 _pc+=4;
                 res3.d = GetIntValue(Pipe2.d); 
                 _pc+=4;
                 break;
-              case 4:
+              case PCIDXSUBADD:   // (D16,PC)
+                res3.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                _pc+=2;
+                break;
+              case PCDISPSUBADD:   // (D8,Xn,PC)
+                res3.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                _pc+=2;
+                break;
+              case IMMSUBADD:
                 res3.d = Pipe2.d; 
                 _pc+=4;
                 break;
@@ -2672,19 +2841,19 @@ aggFlagC4:
             break;
           }
         switch(ADDRESSING2) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
             switch(ABSOLUTEADD_SIZE) {
-              case 0:
+              case ABSSSUBADD:
                 PutIntValue(LOWORD(GetPipeExt(_pc)),res3.d);
                 _pc+=2;
                 break;
-              case 1:
-                PutValue(GetPipeExt(_pc),res3.d);
+              case ABSLSUBADD:
+                PutIntValue(GetPipeExt(_pc),res3.d);
                 _pc+=4;
                 break;
-              case 4:
-                PutValue(GetPipeExt(_pc),res3.d);
-                _pc+=4;
+              case PCIDXSUBADD:   // (D16,PC) qua no!
+              case PCDISPSUBADD:   // (D8,Xn,PC) qua no!
+              case IMMSUBADD:
                 break;
               }
             break;
@@ -2692,7 +2861,7 @@ aggFlagC4:
             DEST_REG_D.x = res3.d;
             break;
           case ADDRREGADD:   // An
-						// qua no
+						DEST_REG_A.x = res3.d;    // MOVEA
             break;
           case ADDRADD:   // (An)
             PutIntValue(DEST_REG_A.x,res3.d);
@@ -2735,18 +2904,25 @@ aggFlagC4:
       case 0x3e:
       case 0x3f:
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
             switch(ABSOLUTEADD_SIZE) {
-              case 0:
+              case ABSSSUBADD:
 	              res3.x = GetShortValue(Pipe2.x.h);
                 _pc+=2;
                 break;
-              case 1:
-                GetPipeExt(_pc);
+              case ABSLSUBADD:
 		            res3.x = GetShortValue(Pipe2.x.h);
 	              _pc+=4;
                 break;
-              case 4:
+              case PCIDXSUBADD:   // (D16,PC)
+                res3.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                _pc+=2;
+                break;
+              case PCDISPSUBADD:   // (D8,Xn,PC)
+                res3.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                _pc+=2;
+                break;
+              case IMMSUBADD:
                 res3.d = Pipe2.w; 
                 _pc+=2;
                 break;
@@ -2784,19 +2960,19 @@ aggFlagC4:
             break;
           }
         switch(ADDRESSING2) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
             switch(ABSOLUTEADD_SIZE2) {
-              case BYTE_SIZE2:
+              case ABSSSUBADD:
                 PutShortValue(LOWORD(GetPipeExt(_pc)),res3.x);
                 _pc+=2;
                 break;
-              case 1:
+              case ABSLSUBADD:
                 PutShortValue(GetPipeExt(_pc),res3.x);
                 _pc+=4;
                 break;
-              case 4:
-                PutShortValue(GetPipeExt(_pc),res3.x);
-                _pc+=4;
+              case PCIDXSUBADD:   // (D16,PC) qua no!
+              case PCDISPSUBADD:   // (D8,Xn,PC) qua no!
+              case IMMSUBADD:
                 break;
               }
             break;
@@ -2804,7 +2980,7 @@ aggFlagC4:
             DEST_REG_D.w.l = res3.x;
             break;
           case ADDRREGADD:   // An
-            DEST_REG_A.w.l = res3.x;
+            DEST_REG_A.x = (signed short int)res3.x;    // MOVEA
             break;
           case ADDRADD:   // (An)
             PutShortValue(DEST_REG_A.x,res3.x);
@@ -2832,68 +3008,71 @@ aggFlagC4:
         
 			case 0x40:   // MOVE from SR, NEGX
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            if(!ABSOLUTEADD_SIZE)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = 0;
-                  res2.b.l = GetValue(Pipe2.x.h);
-                  res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
-                  PutValue(Pipe2.x.h, res3.b.l);
-                  _pc+=6;
-                  break;
-                case WORD_SIZE:
-                  res1.x = 0;
-                  res2.x = GetShortValue(Pipe2.x.h);
-                  res3.x = res1.x - _f.CCR.Ext - res2.x;
-                  PutShortValue(Pipe2.x.h, res3.x);
-                  _pc+=6;
-                  break;
-                case DWORD_SIZE:
-                  res1.d = 0;
-                GetPipeExt(_pc);
-                  res2.d = GetIntValue(Pipe2.x.h);
-                  res3.d = res1.d - _f.CCR.Ext - res2.d;
-                  PutIntValue(Pipe2.x.h, res3.d);
-                  _pc+=6;
-                  break;
-		            case 0xc0:
-                  PutShortValue(Pipe2.x.h, _f.SR.w);
-									goto noAggFlag;
-			            break;
-                }
-            else
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = 0;
-                GetPipeExt(_pc);
-                  res2.b.l = GetValue(Pipe2.x.h);
-                  res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
-                  PutValue(Pipe2.x.h, res3.b.l);
-                  _pc+=6;
-                  break;
-                case WORD_SIZE:
-                  res1.x = 0;
-                GetPipeExt(_pc);
-                  res2.x = GetShortValue(Pipe2.x.h);
-                  res3.x = res1.x - _f.CCR.Ext - res2.x;
-                  PutShortValue(Pipe2.x.h, res3.x);
-                  _pc+=6;
-                  break;
-                case DWORD_SIZE:
-                GetPipeExt(_pc);
-                  res1.d = 0;
-                  _pc+=4;
-                  res2.d = GetIntValue(Pipe2.d); 
-                  res3.d = res1.d - _f.CCR.Ext - res2.d;
-                  PutIntValue(Pipe2.x.h, res3.d);
-                  _pc+=6;
-                  break;
-		            case 0xc0:
-                  PutShortValue(Pipe2.x.h, _f.SR.w);
-									goto noAggFlag;
-			            break;
-                }
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = 0;
+                    res2.b.l = GetValue(Pipe2.w);
+                    res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
+                    PutValue(Pipe2.w, res3.b.l);
+                    _pc+=2;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = 0;
+                    res2.x = GetShortValue(Pipe2.w);
+                    res3.x = res1.x - _f.CCR.Ext - res2.x;
+                    PutShortValue(Pipe2.w, res3.x);
+                    _pc+=2;
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = 0;
+                    res2.d = GetIntValue(Pipe2.w);
+                    res3.d = res1.d - _f.CCR.Ext - res2.d;
+                    PutIntValue(Pipe2.w, res3.d);
+                    _pc+=2;
+                    break;
+                  case 0xc0:
+                    PutShortValue(Pipe2.w,_f.SR.w);
+                    goto noAggFlag;
+                    break;
+                  }
+                break;
+              case ABSLSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = 0;
+                    res2.b.l = GetValue(Pipe2.d);
+                    res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
+                    PutValue(Pipe2.d,res3.b.l);
+                    _pc+=4;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = 0;
+                    res2.x = GetShortValue(Pipe2.d);
+                    res3.x = res1.x - _f.CCR.Ext - res2.x;
+                    PutShortValue(Pipe2.d,res3.x);
+                    _pc+=4;
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = 0;
+                    res2.d = GetIntValue(Pipe2.d); 
+                    res3.d = res1.d - _f.CCR.Ext - res2.d;
+                    PutIntValue(Pipe2.d,res3.d);
+                    _pc+=4;
+                    break;
+                  case 0xc0:
+                    PutShortValue(Pipe2.d,_f.SR.w);
+                    goto noAggFlag;
+                    break;
+                  }
+                break;
+              case PCIDXSUBADD:   // qua no!
+              case PCDISPSUBADD:
+              case IMMSUBADD:
+                break;
+              }
             break;
           case DATAREGADD:   // Dn
             switch(OPERAND_SIZE) {
@@ -2930,21 +3109,18 @@ aggFlagC4:
                 res2.b.l = GetValue(WORKING_REG_A.x);
                 res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
                 PutValue(WORKING_REG_A.x, res3.b.l);
-								_pc+=4;
                 break;
               case WORD_SIZE:
                 res1.x = 0;
                 res2.x = GetShortValue(WORKING_REG_A.x);
                 res3.x = res1.x - _f.CCR.Ext - res2.x;
                 PutShortValue(WORKING_REG_A.x, res3.x);
-								_pc+=4;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
                 res2.d = GetIntValue(WORKING_REG_A.x);
                 res3.d = res1.d - _f.CCR.Ext - res2.d;
                 PutIntValue(WORKING_REG_A.x, res3.d);
-								_pc+=6;
                 break;
 		          case 0xc0:
                 PutShortValue(WORKING_REG_A.x, _f.SR.w);
@@ -2960,7 +3136,6 @@ aggFlagC4:
                 res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
                 PutValue(WORKING_REG_A.x, res3.b.l);
                 WORKING_REG_A.x++;
-								_pc+=2;
                 break;
               case WORD_SIZE:
                 res1.x = 0;
@@ -2968,7 +3143,6 @@ aggFlagC4:
                 res3.x = res1.x - _f.CCR.Ext - res2.x;
                 PutShortValue(WORKING_REG_A.x, res3.x);
                 WORKING_REG_A.x+=2;
-								_pc+=2;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
@@ -2976,7 +3150,6 @@ aggFlagC4:
                 res3.d = res1.d - _f.CCR.Ext - res2.d;
                 PutIntValue(WORKING_REG_A.x, res3.d);
                 WORKING_REG_A.x+=4;
-								_pc+=4;
                 break;
 		          case 0xc0:
                 PutShortValue(WORKING_REG_A.x, _f.SR.w);
@@ -2992,7 +3165,6 @@ aggFlagC4:
                 res2.b.l = GetValue(WORKING_REG_A.x);
                 res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
                 PutValue(WORKING_REG_A.x, res3.b.l);
-								_pc+=4;
                 break;
               case WORD_SIZE:
                 WORKING_REG_A.x-=2;
@@ -3000,7 +3172,6 @@ aggFlagC4:
                 res2.x = GetShortValue(WORKING_REG_A.x);
                 res3.x = res1.x - _f.CCR.Ext - res2.x;
                 PutShortValue(WORKING_REG_A.x, res3.x);
-								_pc+=4;
                 break;
               case DWORD_SIZE:
                 WORKING_REG_A.x-=4;
@@ -3008,7 +3179,6 @@ aggFlagC4:
                 res2.d = GetIntValue(WORKING_REG_A.x);
                 res3.d = res1.d - _f.CCR.Ext - res2.d;
                 PutIntValue(WORKING_REG_A.x, res3.d);
-								_pc+=6;
                 break;
 		          case 0xc0:
                 PutShortValue(WORKING_REG_A.x, _f.SR.w);
@@ -3023,21 +3193,21 @@ aggFlagC4:
                 res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
                 PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.b.l);
-								_pc+=6;
+								_pc+=2;
                 break;
               case WORD_SIZE:
                 res1.x = 0;
                 res2.x = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 res3.x = res1.x - _f.CCR.Ext - res2.x;
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.x);
-								_pc+=6;
+								_pc+=2;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
                 res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 res3.d = res1.d - _f.CCR.Ext - res2.d;
                 PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.d);
-								_pc+=6;
+								_pc+=2;
                 break;
 		          case 0xc0:
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, _f.SR.w);
@@ -3049,18 +3219,18 @@ aggFlagC4:
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                res1.b.l = 0;
-                res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
-                PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, res3.b.l);
-                }
+									res1.b.l = 0;
+									res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+									res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
+									PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, res3.b.l);
+									}
                 else {
-                res1.b.l = 0;
-                res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
-                PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.b.l);
+									res1.b.l = 0;
+									res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+									res3.b.l = res1.b.l - _f.CCR.Ext - res2.b.l;
+									PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.b.l);
                   }
-								_pc+=6;
+								_pc+=2;
                 break;
               case WORD_SIZE:
                 res1.x = 0;
@@ -3068,13 +3238,13 @@ aggFlagC4:
                   res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
                   res3.x = res1.x - _f.CCR.Ext - res2.x;
                   PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, res3.x);
-                }
+									}
                 else {
                   res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
                   res3.x = res1.x - _f.CCR.Ext - res2.x;
                   PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.x);
-                }
-								_pc+=6;
+									}
+								_pc+=2;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
@@ -3082,19 +3252,19 @@ aggFlagC4:
                   res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
                   res3.d = res1.d - _f.CCR.Ext - res2.d;
                   PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, res3.d);
-                }
+									}
                 else {
                   res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
                   res3.d = res1.d - _f.CCR.Ext - res2.d;
                   PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.d);
-                }
-								_pc+=8;
+									}
+								_pc+=2;
                 break;
 		          case 0xc0:
                 if(!DISPLACEMENT_SIZE)
-                PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, _f.SR.w);
+                  PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, _f.SR.w);
                 else
-                PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, _f.SR.w);
+                  PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, _f.SR.w);
 								goto noAggFlag;
 			          break;
               }
@@ -3105,34 +3275,40 @@ aggFlagC4:
         
 			case 0x42:   // CLR
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            if(!ABSOLUTEADD_SIZE) {
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  PutValue(Pipe2.x.h, 0);
-                  break;
-                case WORD_SIZE:
-                  PutShortValue(Pipe2.x.h, 0);
-                  break;
-                case DWORD_SIZE:
-                  PutIntValue(Pipe2.x.h, 0);
-                  break;
-                }
-              _pc+=2;
-              }
-            else {
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  PutValue(Pipe2.d, 0);
-                  break;
-                case WORD_SIZE:
-                  PutShortValue(Pipe2.d, 0);
-                  break;
-                case DWORD_SIZE:
-                  PutIntValue(Pipe2.d, 0);
-                  break;
-                }
-              _pc+=4;
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(Pipe2.x.h, 0);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(Pipe2.x.h, 0);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(Pipe2.x.h, 0);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              case ABSLSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(Pipe2.d, 0);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(Pipe2.d, 0);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(Pipe2.d, 0);
+                    break;
+                  }
+                _pc+=4;
+                break;
+              case PCIDXSUBADD:   // qua no!
+              case PCDISPSUBADD:
+              case IMMSUBADD:
+                break;
               }
             break;
           case DATAREGADD:   // Dn
@@ -3198,7 +3374,6 @@ aggFlagC4:
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w, 0);
-								_pc+=2;
                 break;
               case WORD_SIZE:
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, 0);
@@ -3207,37 +3382,36 @@ aggFlagC4:
                 PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w, 0);
                 break;
               }
+						_pc+=2;
             break;
           case ADDRIDXADD:   // (D8,An,Xn)
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, 0);
-                }
+		              }
                 else {
                   PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, 0);
                   }
-								_pc+=2;
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, 0);
-                }
+                  }
                 else {
                   PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, 0);
                   }
-								_pc+=2;
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l, 0);
-                }
+                  }
                 else {
                   PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, 0);
                   }
-								_pc+=2;
                 break;
               }
+						_pc+=2;
             break;
           }
         _f.CCR.Zero=1;
@@ -3254,32 +3428,35 @@ aggFlagC4:
 			case 0x4d:
 			case 0x4f:
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            switch(LOBYTE(Pipe1) & 0b00000111) {    // questo, qua non è chiaro..
-              case 0b000:
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
                 res3.d = (signed int)Pipe2.w;
                 _pc+=2;
                 break;
-              case 0b001:
+              case ABSLSUBADD:
                 res3.d = Pipe2.d; 
                 _pc+=4;
                 break;
-              case 0b010:
+              case PCIDXSUBADD:   // (D16,PC)
+                res3.d = _pc+(signed short int)Pipe2.w;
+                _pc+=2;
                 break;
-              case 0b011:
+              case PCDISPSUBADD:   // (D8,Xn,PC)
+                res3.x = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l;
+                _pc+=2;
+                break;
+              case IMMSUBADD:
                 break;
               }
             break;
           case DATAREGADD:   // Dn
-            break;
           case ADDRREGADD:   // An
             break;
           case ADDRADD:   // (An)
             res3.d = GetIntValue(WORKING_REG_A.x); // credo sbagliato, v. altri
-            _pc+=6;
             break;
           case ADDRPINCADD:   // (An)+
-            break;
           case ADDRPDECADD:   // -(An)
             break;
           case ADDRDISPADD:   // (D16,An)
@@ -3293,7 +3470,7 @@ aggFlagC4:
             else {
               res3.d = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l;
               }
-            _pc+=8;
+            _pc+=2;
             break;
           }
         if(Pipe1 & 0b0000000001000000) {    // LEA
@@ -3308,9 +3485,23 @@ aggFlagC4:
             if(((signed int)DEST_REG_D.x) < 0 || DEST_REG_D.x > ((signed int)res3.d)) {
               //trap #6
 trap_chk_6:
-              PutIntValue(_f.SR.Supervisor ? --_ssp : --_sp,_pc); // low word prima
+              if(_f.SR.Supervisor) {
+                _ssp-=4;
+                PutIntValue(_ssp,_pc); // low word prima
+                }
+              else {
+                _sp-=4;
+                PutIntValue(_sp,_pc); // low word prima
+                }
               _fsup=_f;
-              PutIntValue(_f.SR.Supervisor ? --_ssp : --_sp,_fsup.w);
+              if(_f.SR.Supervisor) {
+                _ssp-=2;
+                PutShortValue(_ssp,_fsup.w);
+                }
+              else {
+                _sp-=2;
+                PutShortValue(_sp,_fsup.w);
+                }
               res3.b.l=6;
               goto doTrap;
               }
@@ -3320,67 +3511,85 @@ trap_chk_6:
         
 			case 0x44:   // NEG, MOVE to CCR
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            if(!ABSOLUTEADD_SIZE)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = 0;
-                  res2.b.l = GetValue(Pipe2.x.h);
-                  res3.b.l = res1.b.l - res2.b.l;
-                  PutValue(Pipe2.x.h, res3.b.l);
-                  _pc+=6;
-                  break;
-                case WORD_SIZE:
-                  res1.x = 0;
-                  res2.x = GetShortValue(Pipe2.x.h);
-                  res3.x = res1.x - res2.x;
-                  PutShortValue(Pipe2.x.h, res3.x);
-                  _pc+=6;
-                  break;
-                case DWORD_SIZE:
-                GetPipeExt(_pc);
-                  res1.d = 0;
-                  res2.d = GetIntValue(Pipe2.x.h);
-                  res3.d = res1.d - res2.d;
-                  PutIntValue(Pipe2.x.h, res3.d);
-                  _pc+=6;
-                  break;
-		            case 0xc0:
-                  _f.CCR.b =  LOBYTE(GetShortValue(Pipe2.x.h));
-									goto noAggFlag;
-			            break;
-                }
-            else
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                GetPipeExt(_pc);
-                  res1.b.l = 0;
-                  res2.b.l = GetValue(Pipe2.x.h);
-                  res3.b.l = res1.b.l - res2.b.l;
-                  PutValue(Pipe2.x.h, res3.b.l);
-                  _pc+=6;
-                  break;
-                case WORD_SIZE:
-                GetPipeExt(_pc);
-                  res1.x = 0;
-                  res2.x = GetShortValue(Pipe2.x.h);
-                  res3.x = res1.x - res2.x;
-                  PutShortValue(Pipe2.x.h, res3.x);
-                  _pc+=6;
-                  break;
-                case DWORD_SIZE:
-                GetPipeExt(_pc);
-                  res1.d = 0;
-                  res2.d = GetIntValue(Pipe2.d); 
-                  res3.d = res1.d - res2.d;
-                  PutIntValue(Pipe2.x.h, res3.d);
-                  _pc+=6;
-                  break;
-		            case 0xc0:
-                  _f.CCR.b =  LOBYTE(GetShortValue(Pipe2.x.h));
-									goto noAggFlag;
-			            break;
-                }
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = 0;
+                    res2.b.l = GetValue(Pipe2.w);
+                    res3.b.l = res1.b.l - res2.b.l;
+                    PutValue(Pipe2.w,res3.b.l);
+                    _pc+=2;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = 0;
+                    res2.x = GetShortValue(Pipe2.w);
+                    res3.x = res1.x - res2.x;
+                    PutShortValue(Pipe2.w,res3.x);
+                    _pc+=2;
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = 0;
+                    res2.d = GetIntValue(Pipe2.w);
+                    res3.d = res1.d - res2.d;
+                    PutIntValue(Pipe2.w,res3.d);
+                    _pc+=2;
+                    break;
+                  case 0xc0:
+                    _f.CCR.b =  LOBYTE(GetShortValue(Pipe2.x.h));
+                    goto noAggFlag;
+                    break;
+                  }
+                break;
+              case ABSLSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = 0;
+                    res2.b.l = GetValue(Pipe2.d);
+                    res3.b.l = res1.b.l - res2.b.l;
+                    PutValue(Pipe2.d,res3.b.l);
+                    _pc+=4;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = 0;
+                    res2.x = GetShortValue(Pipe2.d);
+                    res3.x = res1.x - res2.x;
+                    PutShortValue(Pipe2.d,res3.x);
+                    _pc+=4;
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = 0;
+                    res2.d = GetIntValue(Pipe2.d); 
+                    res3.d = res1.d - res2.d;
+                    PutIntValue(Pipe2.d,res3.d);
+                    _pc+=4;
+                    break;
+                  case 0xc0:
+                    _f.CCR.b =  LOBYTE(GetShortValue(Pipe2.x.h));
+                    goto noAggFlag;
+                    break;
+                  }
+                break;
+              case PCIDXSUBADD:
+                switch(OPERAND_SIZE) {
+                  case 0xc0:
+                    _f.CCR.b =  LOBYTE(GetShortValue(_pc+(signed short int)Pipe2.w));
+                    goto noAggFlag;
+                    break;
+                  }
+                break;
+              case PCDISPSUBADD:
+                switch(OPERAND_SIZE) {
+                  case 0xc0:
+                    _f.CCR.b =  LOBYTE(GetShortValue(_pc + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l));
+                    goto noAggFlag;
+                    break;
+                  }
+                break;
+              case IMMSUBADD:
+                break;
+              }
             break;
           case DATAREGADD:   // Dn
             switch(OPERAND_SIZE) {
@@ -3417,21 +3626,18 @@ trap_chk_6:
                 res2.b.l = GetValue(WORKING_REG_A.x);
                 res3.b.l = res1.b.l - res2.b.l;
                 PutValue(WORKING_REG_A.x, res3.b.l);
-								_pc+=4;
                 break;
               case WORD_SIZE:
                 res1.x = 0;
                 res2.x = GetShortValue(WORKING_REG_A.x);
                 res3.x = res1.x - res2.x;
                 PutShortValue(WORKING_REG_A.x, res3.x);
-								_pc+=4;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
                 res2.d = GetIntValue(WORKING_REG_A.x);
                 res3.d = res1.d - res2.d;
                 PutIntValue(WORKING_REG_A.x, res3.d);
-								_pc+=6;
                 break;
 		          case 0xc0:
                 _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x));
@@ -3447,7 +3653,6 @@ trap_chk_6:
                 res3.b.l = res1.b.l - res2.b.l;
                 PutValue(WORKING_REG_A.x, res3.b.l);
                 WORKING_REG_A.x++;
-								_pc+=2;
                 break;
               case WORD_SIZE:
                 res1.x = 0;
@@ -3455,7 +3660,6 @@ trap_chk_6:
                 res3.x = res1.x - res2.x;
                 PutShortValue(WORKING_REG_A.x, res3.x);
                 WORKING_REG_A.x+=2;
-								_pc+=2;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
@@ -3463,7 +3667,6 @@ trap_chk_6:
                 res3.d = res1.d - res2.d;
                 PutIntValue(WORKING_REG_A.x, res3.d);
                 WORKING_REG_A.x+=4;
-								_pc+=4;
                 break;
 		          case 0xc0:
                 _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x));
@@ -3479,7 +3682,6 @@ trap_chk_6:
                 res2.b.l = GetValue(WORKING_REG_A.x);
                 res3.b.l = res1.b.l - res2.b.l;
                 PutValue(WORKING_REG_A.x, res3.b.l);
-								_pc+=4;
                 break;
               case WORD_SIZE:
                 WORKING_REG_A.x-=2;
@@ -3487,7 +3689,6 @@ trap_chk_6:
                 res2.x = GetShortValue(WORKING_REG_A.x);
                 res3.x = res1.x - res2.x;
                 PutShortValue(WORKING_REG_A.x, res3.x);
-								_pc+=4;
                 break;
               case DWORD_SIZE:
                 WORKING_REG_A.x-=4;
@@ -3495,7 +3696,6 @@ trap_chk_6:
                 res2.d = GetIntValue(WORKING_REG_A.x);
                 res3.d = res1.d - res2.d;
                 PutIntValue(WORKING_REG_A.x, res3.d);
-								_pc+=6;
                 break;
 		          case 0xc0:
                 _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x));
@@ -3510,21 +3710,21 @@ trap_chk_6:
                 res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 res3.b.l = res1.b.l - res2.b.l;
                 PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.b.l);
-								_pc+=6;
+								_pc+=2;
                 break;
               case WORD_SIZE:
                 res1.x = 0;
                 res2.x = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 res3.x = res1.x - res2.x;
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.x);
-								_pc+=6;
+								_pc+=2;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
                 res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 res3.d = res1.d - res2.d;
                 PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.d);
-								_pc+=6;
+								_pc+=2;
                 break;
 		          case 0xc0:
                 _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w));
@@ -3546,7 +3746,7 @@ trap_chk_6:
                   res3.b.l = res1.b.l - res2.b.l;
                   PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.b.l);
                   }
-								_pc+=6;
+								_pc+=2;
                 break;
               case WORD_SIZE:
                 res1.x = 0;
@@ -3560,7 +3760,7 @@ trap_chk_6:
                   res3.x = res1.x - res2.x;
                   PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.x);
                   }
-								_pc+=6;
+								_pc+=2;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
@@ -3574,7 +3774,7 @@ trap_chk_6:
                   res3.d = res1.d - res2.d;
                   PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.d);
                   }
-								_pc+=8;
+								_pc+=2;
                 break;
 		          case 0xc0:
                 if(!DISPLACEMENT_SIZE) {
@@ -3593,67 +3793,85 @@ trap_chk_6:
         
 			case 0x46:   // MOVE to SR, NOT
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            if(!ABSOLUTEADD_SIZE)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res3.b.l = ~GetValue(Pipe2.x.h);
-                  PutValue(Pipe2.x.h, res3.b.l);
-                  _pc+=6;
-                  break;
-                case WORD_SIZE:
-                  res3.x = ~GetShortValue(Pipe2.x.h);
-                  PutShortValue(Pipe2.x.h, res3.x);
-                  _pc+=6;
-                  break;
-                case DWORD_SIZE:
-                GetPipeExt(_pc);
-                  res3.d = ~GetIntValue(Pipe2.x.h);
-                  PutIntValue(Pipe2.x.h, res3.d);
-                  _pc+=6;
-                  break;
-  	            case 0xc0:
-                  if(_f.SR.Supervisor) {
-                    _f.SR.w  = GetShortValue(Pipe2.x.h);
-                    }
-                  else {
-                    res3.b.l=8;
-                    goto doTrap;
-                    }
-									goto noAggFlag;
-			            break;
-                }
-            else
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                GetPipeExt(_pc);
-                  res3.b.l = GetValue(Pipe2.x.h);
-                  PutValue(Pipe2.x.h, res3.b.l);
-                  _pc+=6;
-                  break;
-                case WORD_SIZE:
-                GetPipeExt(_pc);
-                  res3.x = GetShortValue(Pipe2.x.h);
-                  PutShortValue(Pipe2.x.h, res3.x);
-                  _pc+=6;
-                  break;
-                case DWORD_SIZE:
-                GetPipeExt(_pc);
-                  res3.d = GetIntValue(Pipe2.d); 
-                  PutIntValue(Pipe2.x.h, res3.d);
-                  _pc+=6;
-                  break;
-		            case 0xc0:
-                  if(_f.SR.Supervisor) {
-                    _f.SR.w  = GetShortValue(Pipe2.x.h);
-                    }
-                  else {
-                    res3.b.l=8;
-                    goto doTrap;
-                    }
-									goto noAggFlag;
-			            break;
-                }
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res3.b.l = ~GetValue(Pipe2.w);
+                    PutValue(Pipe2.w,res3.b.l);
+                    _pc+=2;
+                    break;
+                  case WORD_SIZE:
+                    res3.x = ~GetShortValue(Pipe2.w);
+                    PutShortValue(Pipe2.w,res3.x);
+                    _pc+=2;
+                    break;
+                  case DWORD_SIZE:
+                    res3.d = ~GetIntValue(Pipe2.w);
+                    PutIntValue(Pipe2.w,res3.d);
+                    _pc+=2;
+                    break;
+                  case 0xc0:
+                    if(_f.SR.Supervisor) {
+                      _f.SR.w  = GetShortValue(Pipe2.x.h);
+                      goto noAggFlag;
+                      }
+                    else {
+                      res3.b.l=8;
+                      goto doTrap;
+                      }
+                    break;
+                  }
+                break;
+              case ABSLSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res3.b.l = GetValue(Pipe2.d);
+                    PutValue(Pipe2.d,res3.b.l);
+                    _pc+=4;
+                    break;
+                  case WORD_SIZE:
+                    res3.x = GetShortValue(Pipe2.d);
+                    PutShortValue(Pipe2.d,res3.x);
+                    _pc+=4;
+                    break;
+                  case DWORD_SIZE:
+                    res3.d = GetIntValue(Pipe2.d); 
+                    PutIntValue(Pipe2.d,res3.d);
+                    _pc+=4;
+                    break;
+                  case 0xc0:
+                    if(_f.SR.Supervisor) {
+                      _f.SR.w  = GetShortValue(Pipe2.x.h);
+                      goto noAggFlag;
+                      }
+                    else {
+                      res3.b.l=8;
+                      goto doTrap;
+                      }
+                    break;
+                  }
+                break;
+              case PCIDXSUBADD:
+                switch(OPERAND_SIZE) {
+                  case 0xc0:
+                    _f.SR.w =  LOBYTE(GetShortValue(_pc+(signed short int)Pipe2.w));
+                    goto noAggFlag;
+                    break;
+                  }
+                break;
+              case PCDISPSUBADD:
+                switch(OPERAND_SIZE) {
+                  case 0xc0:
+                    _f.SR.w =  LOBYTE(GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l));
+                    goto noAggFlag;
+                    break;
+                  }
+                break;
+              case IMMSUBADD:
+                break;
+              }
             break;
           case DATAREGADD:   // Dn
             switch(OPERAND_SIZE) {
@@ -3729,12 +3947,12 @@ trap_chk_6:
 		          case 0xc0:
                 if(_f.SR.Supervisor) {
                   _f.SR.w = GetShortValue(WORKING_REG_A.x);
+									goto noAggFlag;
                   }
                 else {
                   res3.b.l=8;
                   goto doTrap;
                   }
-								goto noAggFlag;
 			          break;
               }
             break;
@@ -3758,12 +3976,12 @@ trap_chk_6:
 		          case 0xc0:
                 if(_f.SR.Supervisor) {
                   _f.SR.w = GetShortValue(WORKING_REG_A.x);
+									goto noAggFlag;
                   }
                 else {
                   res3.b.l=8;
                   goto doTrap;
                   }
-								goto noAggFlag;
 			          break;
               }
             break;
@@ -3787,12 +4005,12 @@ trap_chk_6:
 		          case 0xc0:
                 if(_f.SR.Supervisor) {
                   _f.SR.w = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+									goto noAggFlag;
                   }
                 else {
                   res3.b.l=8;
                   goto doTrap;
                   }
-								goto noAggFlag;
 			          break;
               }
             break;
@@ -3835,6 +4053,7 @@ trap_chk_6:
                 if(!DISPLACEMENT_SIZE) {
                   if(_f.SR.Supervisor) {
                     _f.SR.w =GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+										goto noAggFlag;
                     }
                   else {
                     res3.b.l=8;
@@ -3844,13 +4063,13 @@ trap_chk_6:
                 else {
                   if(_f.SR.Supervisor) {
   	                _f.SR.w =GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+										goto noAggFlag;
                     }
                   else {
                     res3.b.l=8;
                     goto doTrap;
                     }
                   }
-								goto noAggFlag;
 			          break;
               }
             break;
@@ -3859,11 +4078,370 @@ trap_chk_6:
 				break;
         
 			case 0x48:   // EXT NBCD SWAP PEA MOVEM
+        switch((LOBYTE(Pipe1) & 0xf8)) {
+          case 0x00:    // NBCD
+            break;
+          case 0x40:    // SWAP
+            res3.d = MAKELONG(HIWORD(WORKING_REG_D.x),LOWORD(WORKING_REG_D.x));
+            WORKING_REG_D.x = res3.d;
+            goto aggFlag4;
+            break;
+          case 0x80:    // EXT.w
+            res3.x = (signed short int)LOBYTE(WORKING_REG_D.b.b0);
+            WORKING_REG_D.w.l = res3.x;
+            goto aggFlag2;
+            break;
+          case 0xc0:    // EXT.l
+            res3.d = (signed int)LOWORD(WORKING_REG_D.x);
+            WORKING_REG_D.x = res3.d;
+            goto aggFlag4;
+            break;
+          case 0x48:    // PEA
+          case 0x50:
+          case 0x58:
+          case 0x60:
+          case 0x68:
+          case 0x70:
+          case 0x78:
+            switch(ADDRESSING) {    // v. LEA ..
+              case ABSOLUTEADD:
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    res3.d = (signed int)Pipe2.w;
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    res3.d = Pipe2.d; 
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC)
+                    res3.d = _pc+(signed short int)Pipe2.w;
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    res3.x = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l;
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn 
+              case ADDRREGADD:   // An
+                break;
+              case ADDRADD:   // (An)
+                res3.d = GetIntValue(WORKING_REG_A.x); // credo sbagliato, v. altri
+                break;
+              case ADDRPINCADD:   // (An)+
+                break;
+              case ADDRPDECADD:   // -(An)
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                res3.d = WORKING_REG_A.x + (signed short int)Pipe2.w;
+                _pc+=2;
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                if(!DISPLACEMENT_SIZE) {
+                  res3.d = WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l;
+                  }
+                else {
+                  res3.d = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l;
+                  }
+                _pc+=2;
+                break;
+              }
+            if(_f.SR.Supervisor) {
+              _ssp-=4;
+              PutIntValue(_ssp,res3.d);
+              }
+            else {
+              _sp-=4;
+              PutIntValue(_sp,res3.d);
+              }
+            break;
+          default:      // MOVEM register -> memory
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    res3.x = Pipe2.x.l;
+                    if(!LOBYTE(Pipe1) & 0x40) {
+                      for(i=0; i<8; i++) {
+                        if(Pipe2.x.h & (1 << i)) {
+                          PutShortValue(res3.x, regsD.r[i].w.l);
+                          res3.x+=2;
+                          }
+                        }
+                      for(i=8; i<16; i++) {
+                        if(Pipe2.x.h & (1 << (i-8))) {
+                          PutShortValue(res3.x, regsA.r[i].w.l);
+                          res3.x+=2;
+                          }
+                        }
+                      }
+                    else {
+                      for(i=0; i<8; i++) {
+                        if(Pipe2.x.h & (1 << i)) {
+                          PutIntValue(res3.x, regsD.r[i].x);
+                          res3.x+=4;
+                          }
+                        }
+                      for(i=8; i<16; i++) {
+                        if(Pipe2.x.h & (1 << (i-8))) {
+                          PutIntValue(res3.x, regsA.r[i].x);
+                          res3.x+=4;
+                          }
+                        }
+                      }
+                    _pc+=4;
+                    break;
+                  case ABSLSUBADD:
+                    res3.d = Pipe2.d;
+                    if(!LOBYTE(Pipe1) & 0x40) {
+                      for(i=0; i<8; i++) {
+                        if(Pipe2.x.h & (1 << i)) {
+                          PutShortValue(res3.d, regsD.r[i].w.l);
+                          res3.d+=2;
+                          }
+                        }
+                      for(i=8; i<16; i++) {
+                        if(Pipe2.x.h & (1 << (i-8))) {
+                          PutShortValue(res3.d, regsA.r[i].w.l);
+                          res3.d+=2;
+                          }
+                        }
+                      }
+                    else {
+                      for(i=0; i<8; i++) {
+                        if(Pipe2.x.h & (1 << i)) {
+                          PutIntValue(res3.d, regsD.r[i].x);
+                          res3.d+=4;
+                          }
+                        }
+                      for(i=8; i<16; i++) {
+                        if(Pipe2.x.h & (1 << (i-8))) {
+                          PutIntValue(res3.d, regsA.r[i].x);
+                          res3.d+=4;
+                          }
+                        }
+                      }
+                    _pc+=6;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC)
+                    res3.d = _pc+(signed short int)Pipe2.w;
+                    if(!LOBYTE(Pipe1) & 0x40) {
+                      for(i=0; i<8; i++) {
+                        if(Pipe2.x.h & (1 << i)) {
+                          PutShortValue(res3.d, regsD.r[i].w.l);
+                          res3.d+=2;
+                          }
+                        }
+                      for(i=8; i<16; i++) {
+                        if(Pipe2.x.h & (1 << (i-8))) {
+                          PutShortValue(res3.d, regsA.r[i].w.l);
+                          res3.d+=2;
+                          }
+                        }
+                      }
+                    else {
+                      for(i=0; i<8; i++) {
+                        if(Pipe2.x.h & (1 << i)) {
+                          PutIntValue(res3.d, regsD.r[i].x);
+                          res3.d+=4;
+                          }
+                        }
+                      for(i=8; i<16; i++) {
+                        if(Pipe2.x.h & (1 << (i-8))) {
+                          PutIntValue(res3.d, regsA.r[i].x);
+                          res3.d+=4;
+                          }
+                        }
+                      }
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    res3.x = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l;
+                    if(!LOBYTE(Pipe1) & 0x40) {
+                      for(i=0; i<8; i++) {
+                        if(Pipe2.x.h & (1 << i)) {
+                          PutShortValue(res3.d, regsD.r[i].w.l);
+                          res3.d+=2;
+                          }
+                        }
+                      for(i=8; i<16; i++) {
+                        if(Pipe2.x.h & (1 << (i-8))) {
+                          PutShortValue(res3.d, regsA.r[i].w.l);
+                          res3.d+=2;
+                          }
+                        }
+                      }
+                    else {
+                      for(i=0; i<8; i++) {
+                        if(Pipe2.x.h & (1 << i)) {
+                          PutIntValue(res3.d, regsD.r[i].x);
+                          res3.d+=4;
+                          }
+                        }
+                      for(i=8; i<16; i++) {
+                        if(Pipe2.x.h & (1 << (i-8))) {
+                          PutIntValue(res3.d, regsA.r[i].x);
+                          res3.d+=4;
+                          }
+                        }
+                      }
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn NO!
+              case ADDRREGADD:   // An NO!
+                break;
+              case ADDRADD:   // (An)
+                res3.d = WORKING_REG_A.x;
+                if(!LOBYTE(Pipe1) & 0x40) {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      PutShortValue(res3.d, regsD.r[i].w.l);
+                      res3.d+=2;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      PutShortValue(res3.d, regsA.r[i].w.l);
+                      res3.d+=2;
+                      }
+                    }
+                  }
+                else {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      PutIntValue(res3.d, regsD.r[i].x);
+                      res3.d+=4;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      PutIntValue(res3.d, regsA.r[i].x);
+                      res3.d+=4;
+                      }
+                    }
+                  }
+                _pc+=2;
+                break;
+              case ADDRPINCADD:   // (An)+ qua NO!
+                break;
+              case ADDRPDECADD:   // -(An)
+                res3.d = WORKING_REG_A.x;
+                if(!LOBYTE(Pipe1) & 0x40) {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      PutShortValue(res3.d, regsD.r[i].w.l);
+                      res3.d+=2;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      PutShortValue(res3.d, regsA.r[i].w.l);
+                      res3.d+=2;
+                      }
+                    }
+                  }
+                else {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      PutIntValue(res3.d, regsD.r[i].x);
+                      res3.d+=4;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      PutIntValue(res3.d, regsA.r[i].x);
+                      res3.d+=4;
+                      }
+                    }
+                  }
+                WORKING_REG_A.x = res3.d;   // non è sicurissimo ma qua dovrebbe essere così...
+                _pc+=2;
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                res3.d = WORKING_REG_A.x + (signed short int)Pipe2.x.h;
+                if(!LOBYTE(Pipe1) & 0x40) {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      PutShortValue(res3.d, regsD.r[i].w.l);
+                      res3.d+=2;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      PutShortValue(res3.d, regsA.r[i].w.l);
+                      res3.d+=2;
+                      }
+                    }
+                  }
+                else {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      PutIntValue(res3.d, regsD.r[i].x);
+                      res3.d+=4;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      PutIntValue(res3.d, regsA.r[i].x);
+                      res3.d+=4;
+                      }
+                    }
+                  }
+                _pc+=4;
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                if(!DISPLACEMENT_SIZE) {
+                  res3.d = WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h;
+                  }
+                else {
+                  res3.d = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h;
+                  }
+                if(!LOBYTE(Pipe1) & 0x40) {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      PutShortValue(res3.d, regsD.r[i].w.l);
+                      res3.d+=2;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      PutShortValue(res3.d, regsA.r[i].w.l);
+                      res3.d+=2;
+                      }
+                    }
+                  }
+                else {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      PutIntValue(res3.d, regsD.r[i].x);
+                      res3.d+=4;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      PutIntValue(res3.d, regsA.r[i].x);
+                      res3.d+=4;
+                      }
+                    }
+                  }
+                _pc+=4;
+                break;
+              }
+            break;
+          }
 				break;
         
 			case 0x4a:   // ILLEGAL TAS TST 
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
             switch(OPERAND_SIZE) {
               default:
                 if(LOBYTE(Pipe1) & 1) {
@@ -3875,8 +4453,8 @@ trap_chk_6:
                   _pc+=2;
                   }
                 break;
-              case 0xc0:      // ILLEGAL
-                if(LOBYTE(Pipe1) != 0xfc) {
+              case 0xc0:      // ILLEGAL TAS
+                if(LOBYTE(Pipe1) != 0xfc) {   // TAS
                   if(LOBYTE(Pipe1) & 1) {
                     res3.b.l = GetValue(Pipe2.d);
                     PutValue(Pipe2.d,res3.b.l);
@@ -3888,7 +4466,7 @@ trap_chk_6:
                     _pc+=2;
                     }
                   }
-                else {
+                else {    // ILLEGAL
                   res3.b.l=4;
                   goto doTrap;
                   }
@@ -3986,7 +4564,282 @@ trap_chk_6:
         goto aggFlag;
 				break;
         
-			case 0x4c:   // MOVEM
+			case 0x4c:   // MOVEM memory -> register
+        _pc+=2;
+        switch(ADDRESSING) {
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
+                res3.x = Pipe2.x.l;
+                if(!LOBYTE(Pipe1) & 0x40) {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      regsD.r[i].w.l = GetShortValue(res3.x);
+                      res3.x+=2;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      regsA.r[i].w.l = GetShortValue(res3.x);
+                      res3.x+=2;
+                      }
+                    }
+                  }
+                else {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      regsD.r[i].x = GetIntValue(res3.x);
+                      res3.x+=4;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      regsA.r[i].x = GetIntValue(res3.x);
+                      res3.x+=4;
+                      }
+                    }
+                  }
+                _pc+=4;
+                break;
+              case ABSLSUBADD:
+                res3.d = Pipe2.d;
+                if(!LOBYTE(Pipe1) & 0x40) {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      regsD.r[i].w.l = GetShortValue(res3.d);
+                      res3.d+=2;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      regsA.r[i].w.l = GetShortValue(res3.d);
+                      res3.d+=2;
+                      }
+                    }
+                  }
+                else {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      regsD.r[i].x = GetIntValue(res3.d);
+                      res3.d+=4;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      regsA.r[i].x = GetIntValue(res3.d);
+                      res3.d+=4;
+                      }
+                    }
+                  }
+                _pc+=6;
+                break;
+              case PCIDXSUBADD:   // (D16,PC)
+                res3.d = _pc+(signed short int)Pipe2.w;
+                if(!LOBYTE(Pipe1) & 0x40) {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      regsD.r[i].w.l = GetShortValue(res3.d);
+                      res3.d+=2;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      regsA.r[i].w.l = GetShortValue(res3.d);
+                      res3.d+=2;
+                      }
+                    }
+                  }
+                else {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      regsD.r[i].x = GetIntValue(res3.d);
+                      res3.d+=4;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      regsA.r[i].x = GetIntValue(res3.d);
+                      res3.d+=4;
+                      }
+                    }
+                  }
+                break;
+              case PCDISPSUBADD:   // (D8,Xn,PC)
+                res3.x = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l;
+                if(!LOBYTE(Pipe1) & 0x40) {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      regsD.r[i].w.l = GetShortValue(res3.d);
+                      res3.d+=2;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      regsA.r[i].w.l = GetShortValue(res3.d);
+                      res3.d+=2;
+                      }
+                    }
+                  }
+                else {
+                  for(i=0; i<8; i++) {
+                    if(Pipe2.x.h & (1 << i)) {
+                      regsD.r[i].x = GetIntValue(res3.d);
+                      res3.d+=4;
+                      }
+                    }
+                  for(i=8; i<16; i++) {
+                    if(Pipe2.x.h & (1 << (i-8))) {
+                      regsA.r[i].x = GetIntValue(res3.d);
+                      res3.d+=4;
+                      }
+                    }
+                  }
+                _pc+=2;
+                break;
+              case IMMSUBADD:
+                break;
+              }
+            break;
+          case DATAREGADD:   // Dn NO!
+          case ADDRREGADD:   // An NO!
+            break;
+          case ADDRADD:   // (An)
+            res3.d = WORKING_REG_A.x;
+            if(!LOBYTE(Pipe1) & 0x40) {
+              for(i=0; i<8; i++) {
+                if(Pipe2.x.h & (1 << i)) {
+                  regsD.r[i].w.l = GetShortValue(res3.d);
+                  res3.d+=2;
+                  }
+                }
+              for(i=8; i<16; i++) {
+                if(Pipe2.x.h & (1 << (i-8))) {
+                  regsA.r[i].w.l = GetShortValue(res3.d);
+                  res3.d+=2;
+                  }
+                }
+              }
+            else {
+              for(i=0; i<8; i++) {
+                if(Pipe2.x.h & (1 << i)) {
+                  regsD.r[i].x = GetIntValue(res3.d);
+                  res3.d+=4;
+                  }
+                }
+              for(i=8; i<16; i++) {
+                if(Pipe2.x.h & (1 << (i-8))) {
+                  regsA.r[i].x = GetIntValue(res3.d);
+                  res3.d+=4;
+                  }
+                }
+              }
+            _pc+=2;
+            break;
+          case ADDRPINCADD:   // (An)+
+            res3.d = WORKING_REG_A.x;
+            if(!LOBYTE(Pipe1) & 0x40) {
+              for(i=0; i<8; i++) {
+                if(Pipe2.x.h & (1 << i)) {
+                  regsD.r[i].w.l = GetShortValue(res3.d);
+                  res3.d+=2;
+                  }
+                }
+              for(i=8; i<16; i++) {
+                if(Pipe2.x.h & (1 << (i-8))) {
+                  regsA.r[i].w.l = GetShortValue(res3.d);
+                  res3.d+=2;
+                  }
+                }
+              }
+            else {
+              for(i=0; i<8; i++) {
+                if(Pipe2.x.h & (1 << i)) {
+                  regsD.r[i].x = GetIntValue(res3.d);
+                  res3.d+=4;
+                  }
+                }
+              for(i=8; i<16; i++) {
+                if(Pipe2.x.h & (1 << (i-8))) {
+                  regsA.r[i].x = GetIntValue(res3.d);
+                  res3.d+=4;
+                  }
+                }
+              }
+            WORKING_REG_A.x = res3.d;   // si spera...
+            _pc+=2;
+            break;
+          case ADDRPDECADD:   // -(An) qua NO!
+            break;
+          case ADDRDISPADD:   // (D16,An)
+            res3.d = WORKING_REG_A.x + (signed short int)Pipe2.x.h;
+            if(!LOBYTE(Pipe1) & 0x40) {
+              for(i=0; i<8; i++) {
+                if(Pipe2.x.h & (1 << i)) {
+                  regsD.r[i].w.l = GetShortValue(res3.d);
+                  res3.d+=2;
+                  }
+                }
+              for(i=8; i<16; i++) {
+                if(Pipe2.x.h & (1 << (i-8))) {
+                  regsA.r[i].w.l = GetShortValue(res3.d);
+                  res3.d+=2;
+                  }
+                }
+              }
+            else {
+              for(i=0; i<8; i++) {
+                if(Pipe2.x.h & (1 << i)) {
+                  regsD.r[i].x = GetIntValue(res3.d);
+                  res3.d+=4;
+                  }
+                }
+              for(i=8; i<16; i++) {
+                if(Pipe2.x.h & (1 << (i-8))) {
+                  regsA.r[i].x = GetIntValue(res3.d);
+                  res3.d+=4;
+                  }
+                }
+              }
+            _pc+=4;
+            break;
+          case ADDRIDXADD:   // (D8,An,Xn)
+            if(!DISPLACEMENT_SIZE) {
+              res3.d = WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.h;
+              }
+            else {
+              res3.d = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.h;
+              }
+            if(!LOBYTE(Pipe1) & 0x40) {
+              for(i=0; i<8; i++) {
+                if(Pipe2.x.h & (1 << i)) {
+                  regsD.r[i].w.l = GetShortValue(res3.d);
+                  res3.d+=2;
+                  }
+                }
+              for(i=8; i<16; i++) {
+                if(Pipe2.x.h & (1 << (i-8))) {
+                  regsA.r[i].w.l = GetShortValue(res3.d);
+                  res3.d+=2;
+                  }
+                }
+              }
+            else {
+              for(i=0; i<8; i++) {
+                if(Pipe2.x.h & (1 << i)) {
+                  regsD.r[i].x = GetIntValue(res3.d);
+                  res3.d+=4;
+                  }
+                }
+              for(i=8; i<16; i++) {
+                if(Pipe2.x.h & (1 << (i-8))) {
+                  regsA.r[i].x = GetIntValue(res3.d);
+                  res3.d+=4;
+                  }
+                }
+              }
+            _pc+=4;
+            break;
+          }
 				break;
         
 			case 0x4e:   // TRAP LINK UNLK MOVEUSP RESET NOP STOP RTE RTS TRAPV RTR JSR JMP
@@ -4079,12 +4932,17 @@ trap_chk_6:
             res3.b.l=LOBYTE(Pipe1) & 0xf;
             
 doTrap:
-            PutIntValue(--_ssp,_pc); // low word prima
+            _ssp-=4;
+            PutIntValue(_ssp,_pc); // low word prima
             _fsup=_f;
+            _ssp-=2;
             PutIntValue(--_ssp,_fsup.w);
             _f.SR.Supervisor=1;
             _pc=GetIntValue(0x00000080+(res3.b.l)*4);
+            
+            printf("68K exception %u\r\n",res3.b.l);
             break;
+
           case 0x50:   // LINK
           case 0x51:
           case 0x52:
@@ -4162,26 +5020,36 @@ doTrap:
               else
                 _sp-=4;
               switch(ADDRESSING) {
-                case ABSOLUTELADD:
-                  if(LOBYTE(Pipe1) & 1) {
-                    PutIntValue(_f.SR.Supervisor ? _ssp : _sp,_pc+4);  // low word prima
-                    _pc=Pipe2.d;
-                    }
-                  else {
-                    PutIntValue(_f.SR.Supervisor ? _ssp : _sp,_pc+2);  // low word prima
-                    _pc=Pipe2.x.l;
+                case ABSOLUTEADD:
+                  switch(ABSOLUTEADD_SIZE) {
+                    case ABSSSUBADD:
+                      PutIntValue(_f.SR.Supervisor ? _ssp : _sp,_pc+2);  // low word prima
+                      _pc=Pipe2.x.l;
+                      break;
+                    case ABSLSUBADD:
+                      PutIntValue(_f.SR.Supervisor ? _ssp : _sp,_pc+4);  // 
+                      _pc=Pipe2.d;
+                      break;
+                    case PCIDXSUBADD:   // (D16,PC)
+                      PutIntValue(_f.SR.Supervisor ? _ssp : _sp,_pc+2);  // 
+                      _pc = _pc+(signed short int)Pipe2.w;
+                      break;
+                    case PCDISPSUBADD:   // (D8,Xn,PC)
+                      PutIntValue(_f.SR.Supervisor ? _ssp : _sp,_pc+2);  // 
+                      _pc = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l;
+                      break;
+                    case IMMSUBADD:
+                      break;
                     }
                   break;
                 case DATAREGADD:   // Dn
-                  break;
                 case ADDRREGADD:   // An
                   break;
                 case ADDRADD:   // (An)
                   PutIntValue(_f.SR.Supervisor ? _ssp : _sp,_pc);  // 
                   _pc=GetIntValue(WORKING_REG_A.x);
                   break;
-                case ADDRPINCADD:   // (An)+
-                  break;
+                case ADDRPINCADD:   // (An)+    qua no!
                 case ADDRPDECADD:   // -(An)
                   break;
                 case ADDRDISPADD:   // (D16,An)
@@ -4199,12 +5067,22 @@ doTrap:
               }
             else {    // JMP
               switch(ADDRESSING) {
-                case ABSOLUTELADD:
-                  if(LOBYTE(Pipe1) & 1) {
-                    _pc=Pipe2.d;
-                    }
-                  else {
-                    _pc=Pipe2.x.l;
+                case ABSOLUTEADD:
+                  switch(ABSOLUTEADD_SIZE) {
+                    case ABSSSUBADD:
+                      _pc=Pipe2.x.l;
+                      break;
+                    case ABSLSUBADD:
+                      _pc=Pipe2.d;
+                      break;
+                    case PCIDXSUBADD:   // (D16,PC)
+                      _pc = _pc+(signed short int)Pipe2.w;
+                      break;
+                    case PCDISPSUBADD:   // (D8,Xn,PC)
+                      _pc = WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l;
+                      break;
+                    case IMMSUBADD:
+                      break;
                     }
                   break;
                 case DATAREGADD:   // Dn
@@ -4302,16 +5180,21 @@ doDBccScc:
               }
             else {      // Scc
               switch(ADDRESSING) {
-                case ABSOLUTELADD:    // abs
-                  if(!ABSOLUTEADD_SIZE) {
+                case ABSOLUTEADD:    // abs
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
                     PutValue(Pipe2.x.h, res3.b.l);
-                    _pc+=6;
-                    }
-                  else {
-                GetPipeExt(_pc);
-                    PutValue(Pipe2.x.h, res3.b.l);
-                    _pc+=6;
-                    }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    PutValue(Pipe2.d, res3.b.l);
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:
+                  case PCDISPSUBADD:
+                  case IMMSUBADD:
+                    break;
+                  }
                   break;
                 case DATAREGADD:   // Dn
                   WORKING_REG_D.b.b0= res3.b.l;
@@ -4348,46 +5231,52 @@ doDBccScc:
             if(!res2.b.l)
               res2.b.l=8;
             switch(ADDRESSING) {
-              case ABSOLUTELADD:    // abs
-                if(!ABSOLUTEADD_SIZE) {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res1.b.l = GetValue(Pipe2.w);
-                      res3.b.l = res1.b.l + res2.b.l;
-                      PutValue(Pipe2.w, res3.b.l);
-                      break;
-                    case WORD_SIZE:
-                      res1.x = GetShortValue(Pipe2.w);
-                      res3.x = res1.x + res2.b.l;
-                      PutShortValue(Pipe2.w, res3.x);
-                      break;
-                    case DWORD_SIZE:
-                      res1.x = GetShortValue(Pipe2.w);
-                      res3.d = res1.d + res2.b.l;
-                      PutIntValue(Pipe2.w, res3.d);
-                      break;
-                    }
-                  _pc+=2;
-                  }
-                else {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res1.b.l = GetValue(Pipe2.d);
-                      res3.b.l = res1.b.l + res2.b.l;
-                      PutValue(Pipe2.d, res3.b.l);
-                      break;
-                    case WORD_SIZE:
-                      res1.x = GetShortValue(Pipe2.d);
-                      res3.x = res1.x + res2.b.l;
-                      PutShortValue(Pipe2.d, res3.x);
-                      break;
-                    case DWORD_SIZE:
-                      res1.x = GetIntValue(Pipe2.d);
-                      res3.d = res1.d + res2.b.l;
-                      PutIntValue(Pipe2.d, res3.d);
-                      break;
-                    }
-                  _pc+=4;
+              case ABSOLUTEADD:    // abs
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.w);
+                        res3.b.l = res1.b.l + res2.b.l;
+                        PutValue(Pipe2.w, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.w);
+                        res3.x = res1.x + res2.b.l;
+                        PutShortValue(Pipe2.w, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.w);
+                        res3.d = res1.d + res2.b.l;
+                        PutIntValue(Pipe2.w, res3.d);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.d);
+                        res3.b.l = res1.b.l + res2.b.l;
+                        PutValue(Pipe2.d, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.d);
+                        res3.x = res1.x + res2.b.l;
+                        PutShortValue(Pipe2.d, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        res1.x = GetIntValue(Pipe2.d);
+                        res3.d = res1.d + res2.b.l;
+                        PutIntValue(Pipe2.d, res3.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:
+                  case PCDISPSUBADD:
+                  case IMMSUBADD:
+                    break;
                   }
                 goto aggFlagC;
                 break;
@@ -4624,47 +5513,53 @@ doDBccScc:
             if(!res2.b.l)
               res2.b.l=8;
             switch(ADDRESSING) {
-              case ABSOLUTELADD:    // abs
-                if(!ABSOLUTEADD_SIZE) {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res1.b.l = GetValue(Pipe2.w);
-                      res3.b.l = res1.b.l - res2.b.l;
-                      PutValue(Pipe2.w,res3.b.l);
-                      break;
-                    case WORD_SIZE:
-                      res1.x = GetShortValue(Pipe2.w);
-                      res3.x = res1.x - res2.b.l;
-                      PutShortValue(Pipe2.w,res3.x);
-                      break;
-                    case DWORD_SIZE:
-                      res1.d = GetIntValue(Pipe2.w);
-                      res3.d = res1.d - res2.b.l;
-                      PutIntValue(Pipe2.w,res3.d); 
-                      break;
-                    }
-                  _pc+=2;
-									}
-                else {
-                  switch(OPERAND_SIZE) {
-                    case BYTE_SIZE:
-                      res1.b.l = GetValue(Pipe2.d);
-                      res3.b.l = res1.b.l - res2.b.l;
-                      PutValue(Pipe2.d,res3.b.l);
-                      break;
-                    case WORD_SIZE:
-                      res1.x = GetShortValue(Pipe2.d);
-                      res3.x = res1.x - res2.b.l;
-                      PutShortValue(Pipe2.d,res3.x);
-                      break;
-                    case DWORD_SIZE:
-                      res1.d = GetIntValue(Pipe2.d); 
-                      res3.d = res1.d - res2.b.l;
-                      PutIntValue(Pipe2.d,res3.d); 
-                      break;
-                    }
-                  _pc+=4;
-									}
+              case ABSOLUTEADD:    // abs
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.w);
+                        res3.b.l = res1.b.l - res2.b.l;
+                        PutValue(Pipe2.w,res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.w);
+                        res3.x = res1.x - res2.b.l;
+                        PutShortValue(Pipe2.w,res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.w);
+                        res3.d = res1.d - res2.b.l;
+                        PutIntValue(Pipe2.w,res3.d); 
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.d);
+                        res3.b.l = res1.b.l - res2.b.l;
+                        PutValue(Pipe2.d,res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.d);
+                        res3.x = res1.x - res2.b.l;
+                        PutShortValue(Pipe2.d,res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.d); 
+                        res3.d = res1.d - res2.b.l;
+                        PutIntValue(Pipe2.d,res3.d); 
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:
+                  case PCDISPSUBADD:
+                  case IMMSUBADD:
+                    break;
+                  }
                 goto aggFlagC;
                 break;
               case DATAREGADD:   // Dn
@@ -4842,7 +5737,7 @@ do_bra:
         if(LOBYTE(Pipe1))
           _pc+=(signed char)LOBYTE(Pipe1);
         else
-          _pc+=(signed short int)Pipe2.w;
+          _pc+=(signed short int)Pipe2.w  /*+2*/;
 				break;
         
 			case 0x61:   // BSR
@@ -4856,65 +5751,107 @@ do_bra:
           }
         else {
           PutIntValue(_f.SR.Supervisor ? _ssp : _sp,_pc+2);  // low word prima
-          _pc+=(signed short int)Pipe2.w+2;
+          _pc+=(signed short int)Pipe2.w  /*+2*/;
           }
 				break;
         
 			case 0x62:   // Bc
         if(!_f.CCR.Carry && !_f.CCR.Zero)     // higher !C !Z
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x63:
         if(_f.CCR.Zero || (_f.CCR.Sign ^ _f.CCR.Ovf))     // lower or equal
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x64:
         if(!_f.CCR.Carry)     // carry clear
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x65:
         if(_f.CCR.Carry)      // carry set
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x66:
         if(!_f.CCR.Zero)      // not equal
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x67:
         if(_f.CCR.Zero)      // equal
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x68:
         if(!_f.CCR.Ovf)      // overflow clear
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x69:
         if(_f.CCR.Ovf)       // overflow set
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x6a:
         if(!_f.CCR.Sign)     // plus
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x6b:
         if(_f.CCR.Sign)      // minus
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x6c:
         if(!(_f.CCR.Sign ^ _f.CCR.Ovf))     // greater or equal
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x6d:
         if(_f.CCR.Sign ^ _f.CCR.Ovf)     // less than
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x6e:
         if(_f.CCR.Zero && !(_f.CCR.Sign ^ _f.CCR.Ovf))     // greater than
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
 			case 0x6f:
         if(_f.CCR.Carry || _f.CCR.Zero)     // less or equal
           goto do_bra;
+        else
+          if(!LOBYTE(Pipe1))
+            _pc+=2;
 				break;
         /*
         switch(Pipe1 & 0xf) {
@@ -4957,6 +5894,7 @@ do_bra:
 			case 0x7c:
 			case 0x7e:
         DEST_REG_D.b.b0 = LOBYTE(Pipe1);
+        goto aggFlag;
 				break;
         
 			case 0x80:   // DIVU OR
@@ -4975,165 +5913,574 @@ do_bra:
 			case 0x8b:
 			case 0x8d:
 			case 0x8f:
-//        DEST_REG_D.b.b0 = LOBYTE(Pipe1);
         if(OPERAND_SIZE == 0xc0) {    // DIVU DIVS
-          res1.x=DEST_REG_D.x;
+          res1.d=DEST_REG_D.x;
+          switch(ADDRESSING) {
+            case ABSOLUTEADD:
+              switch(ABSOLUTEADD_SIZE) {
+                case ABSSSUBADD:
+                  res2.x = GetShortValue(Pipe2.x.h);
+                  _pc+=2;
+                  break;
+                case ABSLSUBADD:
+                  GetPipeExt(_pc);
+                  res2.x = GetShortValue(Pipe2.d); 
+                  _pc+=4;
+                  break;
+                case PCIDXSUBADD:   // (D16,PC)
+                  res2.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                  _pc+=2;
+                  break;
+                case PCDISPSUBADD:   // (D8,Xn,PC)
+                  res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                  _pc+=2;
+                  break;
+                case IMMSUBADD:
+                  res2.x = Pipe2.w; 
+                  _pc+=4;
+                  break;
+                }
+              break;
+            case DATAREGADD:   // Dn
+              res2.x = WORKING_REG_D.w.l;
+              break;
+            case ADDRREGADD:   // An qua NO!
+              break;
+            case ADDRADD:   // (An)
+              res2.x = GetShortValue(WORKING_REG_A.x);
+              break;
+            case ADDRPINCADD:   // (An)+
+              res2.x = GetShortValue(WORKING_REG_A.x);
+              WORKING_REG_A.x+=4;
+              break;
+            case ADDRPDECADD:   // -(An)
+              WORKING_REG_A.x-=4;
+              res2.x = GetShortValue(WORKING_REG_A.x);
+              break;
+            case ADDRDISPADD:   // (D16,An)
+              res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+              break;
+            case ADDRIDXADD:   // (D8,An,Xn)
+              if(!DISPLACEMENT_SIZE) {
+                res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                }
+              else {
+                res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                }
+              break;
+            }
+          if(!res2.x) {
+            res3.b.l=5;
+            goto doTrap;
+            }
           if(Pipe1 & 0b0000000100000000) {		// DIVS
-						switch(ADDRESSING) {
-							case ABSOLUTELADD:
-								break;
-							case DATAREGADD:   // Dn
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										res2.x = WORKING_REG_D.x;
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRREGADD:   // An  qua NO!
-								break;
-							case ADDRADD:   // (An)
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										res2.x = (signed int)GetIntValue(WORKING_REG_A.x);
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRPINCADD:   // (An)+
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										res2.x = GetIntValue(WORKING_REG_A.x);
-										WORKING_REG_A.x+=4;
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRPDECADD:   // -(An)
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										WORKING_REG_A.x-=4;
-										res2.x = GetIntValue(WORKING_REG_A.x);
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRDISPADD:   // (D16,An)
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										res2.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRIDXADD:   // (D8,An,Xn)
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										if(!DISPLACEMENT_SIZE)
-											res2.x = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-										else
-											res2.x = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-										break;
-									default:
-										break;
-									}
-								break;
-							}
-            if(!res2.x) {
-              res3.b.l=5;
-              goto doTrap;
-              }
   					res3.d = (signed int)res1.d / (signed short int)res2.x;
   					DEST_REG_D.x = MAKELONG(res3.x,
                     (signed int)res1.d % (signed short int)res2.x);
 						}
 					else {		// DIVU
-
-			//      DEST_REG_D.b.b0 = LOBYTE(Pipe1);
-						switch(ADDRESSING) {
-							case ABSOLUTELADD:
-								break;
-							case DATAREGADD:   // Dn
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										res2.x = WORKING_REG_D.x;
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRREGADD:   // An qua NO!
-								break;
-							case ADDRADD:   // (An)
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										res2.x = GetIntValue(WORKING_REG_A.x);
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRPINCADD:   // (An)+
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										res2.x = GetIntValue(WORKING_REG_A.x);
-										WORKING_REG_A.x+=4;
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRPDECADD:   // -(An)
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										WORKING_REG_A.x-=4;
-										res2.x = GetIntValue(WORKING_REG_A.x);
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRDISPADD:   // (D16,An)
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										res2.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
-										break;
-									default:
-										break;
-									}
-								break;
-							case ADDRIDXADD:   // (D8,An,Xn)
-								switch(OPERAND_SIZE) {
-									case 0xc0:
-										if(!DISPLACEMENT_SIZE)
-											res2.x = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-										else
-											res2.x = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-										break;
-									default:
-										break;
-									}
-								break;
-							}
-            if(!res2.x) {
-              res3.b.l=5;
-              goto doTrap;
-              }
   					res3.d = res1.d / res2.x;
   					DEST_REG_D.x = MAKELONG(res3.x, res1.d % res2.x);
-
-aggFlagD:
-            _f.CCR.Zero=!res3.x;
-            _f.CCR.Sign=!!(res3.x & 0x8000);
-            _f.CCR.Ovf=0;
-            _f.CCR.Carry=!!(HIWORD(res3.d));
-						}
+            }
+          _f.CCR.Zero=!res3.x;
+          _f.CCR.Sign=!!(res3.x & 0x8000);
+          _f.CCR.Carry=0;
+          _f.CCR.Ovf=!!(HIWORD(res3.d));
 					}
+        else {      // SBCD OR 
+          if(Pipe1 & 0b0000000100000000) { // direction... 
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // 
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.x.h);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.x.h);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.x.h);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    GetPipeExt(_pc);
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.d);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.d);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
+                    res1.d = Pipe2.d; 
+                    _pc+=4;
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = WORKING_REG_D.b.b0;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = WORKING_REG_D.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res1.x = WORKING_REG_D.x;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An qua SBCD
+                if(OPERAND_SIZE == 0) {
+                  res1.b.l = GetValue(--WORKING_REG_A.x);
+                  res2.b.l = GetValue(--DEST_REG_A.x);
+                  res3.x = (res1.b.l & 0xf) - (res2.b.l & 0xf) - _f.CCR.Ext;
+                  res3.x = (((res1.b.l & 0xf0) >> 4) - ((res2.b.l & 0xf0) >> 4) - (res3.b.h ? 1 : 0)) | 
+                            res3.b.l;
+                  PutValue(DEST_REG_A.x, res3.b.l);
+                  }
+                _f.CCR.Zero=!res3.b.l;
+                _f.CCR.Ext=_f.CCR.Carry=!!res3.b.h;
+                goto noAggFlag;
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    WORKING_REG_A.x--;
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    WORKING_REG_A.x-=2;
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    WORKING_REG_A.x-=4;
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  }
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  }
+                break;
+              }
+            }
+          else {
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                res1.b.l = WORKING_REG_D.b.b0;
+                break;
+              case WORD_SIZE:
+                res1.x = WORKING_REG_D.w.l;
+                break;
+              case DWORD_SIZE:
+                res1.d = WORKING_REG_D.x;
+                break;
+              }
+            }
+
+          if(Pipe1 & 0b0000000100000000) { // direction
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                res2.b.l = WORKING_REG_D.b.b0;
+                break;
+              case WORD_SIZE:
+                res2.x = WORKING_REG_D.w.l;
+                break;
+              case DWORD_SIZE:
+                res2.d = WORKING_REG_D.x;
+                break;
+              }
+            }
+          else {
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // #imm
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(Pipe2.x.h);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(Pipe2.x.h);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(Pipe2.x.h);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    GetPipeExt(_pc);
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(Pipe2.d);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(Pipe2.d);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(Pipe2.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC) qua NO!
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                  case IMMSUBADD:
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn .. in un punto il Doc dice questo no qua...
+                #warning MA VA IN CONFLITTO CON SBCD! v. anche sopra
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = WORKING_REG_D.b.b0;
+                    break;
+                  case WORD_SIZE:
+                    res2.x = WORKING_REG_D.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = WORKING_REG_D.x;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    WORKING_REG_A.x--;
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    WORKING_REG_A.x-=2;
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    WORKING_REG_A.x-=4;
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              }
+            }
+
+          switch(OPERAND_SIZE) {
+            case BYTE_SIZE:
+              res3.x = res1.b.l | res2.b.l;
+              break;
+            case WORD_SIZE:
+              res3.d = res1.x | res2.x;
+              break;
+            case DWORD_SIZE:
+              res3.d = res1.d | res2.d;
+              break;
+            }
+
+          if(Pipe1 & 0b0000000100000000) { // direction
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // #imm
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(Pipe2.x.h, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(Pipe2.x.h, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(Pipe2.x.h, res3.d);
+                        break;
+                      }
+                    break;
+                  case ABSLSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(Pipe2.d, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(Pipe2.d, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(Pipe2.d, res3.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC) qua NO!
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                  case IMMSUBADD:
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn .. in un punto il Doc dice questo no qua...
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    DEST_REG_D.b.b0 = res3.b.l;
+                    break;
+                  case WORD_SIZE:
+                    DEST_REG_D.w.l = res3.x;
+                    break;
+                  case DWORD_SIZE:
+                    DEST_REG_D.x = res3.d;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An qua NO!
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    WORKING_REG_A.x++;
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    WORKING_REG_A.x+=2;
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.x);
+                    WORKING_REG_A.x+=4;
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.b.l);
+                    else
+                      PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.x);
+                    else
+                      PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.d);
+                    else
+                      PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.d);
+                    break;
+                  }
+                break;
+              }
+            }
+          else {
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                WORKING_REG_D.b.b0 = res3.b.l;
+                break;
+              case WORD_SIZE:
+                WORKING_REG_D.w.l = res3.x;
+                break;
+              case DWORD_SIZE:
+                WORKING_REG_D.x = res3.d;
+                break;
+              }
+            }
+          }
 				break;
         
 			case 0x90:   // SUB SUBX SUBA
@@ -5152,502 +6499,687 @@ aggFlagD:
 			case 0x9d:
 			case 0x9e:
 			case 0x9f:
-        if(Pipe1 & 0b0000000100000000) { // direction... 
+        if(OPERAND_SIZE == 0xc0) { // SUBA
           switch(ADDRESSING) {
-            case IMMEDIATEADD:    // #imm
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  DEST_REG_D.b.b0 += Pipe2.b.l;
+            case ABSOLUTEADD:    // 
+              switch(ABSOLUTEADD_SIZE) {
+                case ABSSSUBADD:
+                  if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                    res1.x = GetShortValue(Pipe2.x.h);
+                    }
+                  else {
+                    res1.d = GetIntValue(Pipe2.x.h);
+                    }
+                  _pc+=2;
                   break;
-                case WORD_SIZE:
-                  DEST_REG_D.w.l += Pipe2.x.l;
+                case ABSLSUBADD:
+                  GetPipeExt(_pc);
+                  if(!(HIBYTE(Pipe1) & 0b00000001)) { // 
+                    res1.x = GetShortValue(Pipe2.d);
+                    }
+                  else {
+                    res1.d = GetIntValue(Pipe2.d);
+                    }
+                  _pc+=4;
                   break;
-                case DWORD_SIZE:
-                  DEST_REG_D.x += Pipe2.d;
+                case PCIDXSUBADD:   // (D16,PC)
+                  if(!(HIBYTE(Pipe1) & 0b00000001)) { // 
+                    res3.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                    }
+                  else {
+                    res3.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                    }
+                  _pc+=2;
                   break;
-                case 0xc0:
-  #warning finire word long
+                case PCDISPSUBADD:   // (D8,Xn,PC)
+                  if(!(HIBYTE(Pipe1) & 0b00000001)) { // 
+                    res3.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    }
+                  else {
+                    res3.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    }
+                  _pc+=2;
+                  break;
+                case IMMSUBADD:
+                  res3.d = Pipe2.d; // boh
+                  _pc+=4;
                   break;
                 }
               break;
             case DATAREGADD:   // Dn
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = WORKING_REG_D.b.b0;
-                  break;
-                case WORD_SIZE:
-                  res1.x = WORKING_REG_D.w.l;
-                  break;
-                case DWORD_SIZE:
-                  res1.x = WORKING_REG_D.x;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
+              if(!(HIBYTE(Pipe1) & 0b00000001))  // size
+                res1.x = WORKING_REG_D.w.l;
+              else
+                res1.d = WORKING_REG_D.x;
               break;
             case ADDRREGADD:   // An
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = WORKING_REG_A.b.b0;
-                  break;
-                case WORD_SIZE:
-                  res1.x = WORKING_REG_A.w.l;
-                  break;
-                case DWORD_SIZE:
-                  res1.d = WORKING_REG_A.x;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              goto noAggFlag;
+              if(!(HIBYTE(Pipe1) & 0b00000001))  // size
+                res1.x = WORKING_REG_A.w.l;
+              else
+                res1.d = WORKING_REG_A.x;
               break;
             case ADDRADD:   // (An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = GetValue(WORKING_REG_A.x);
-                  break;
-                case WORD_SIZE:
-                  res1.x = GetShortValue(WORKING_REG_A.x);
-                  break;
-                case DWORD_SIZE:
-                  res1.d = GetIntValue(WORKING_REG_A.x);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
+              if(!(HIBYTE(Pipe1) & 0b00000001))  // 
+                res1.x = GetShortValue(WORKING_REG_A.x);
+              else
+                res1.d = GetIntValue(WORKING_REG_A.x);
               break;
             case ADDRPINCADD:   // (An)+
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = GetValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x++;
-                  break;
-                case WORD_SIZE:
-                  res1.x = GetShortValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x+=2;
-                  break;
-                case DWORD_SIZE:
-                  res1.d = GetIntValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x+=4;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  WORKING_REG_A.x+=4;
-                  break;
+              if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                res1.x = GetShortValue(WORKING_REG_A.x);
+                WORKING_REG_A.x+=2;
+                }
+              else {
+                res1.d = GetIntValue(WORKING_REG_A.x);
+                WORKING_REG_A.x+=4;
                 }
               break;
             case ADDRPDECADD:   // -(An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_A.x--;
-                  res1.b.l = GetValue(WORKING_REG_A.x);
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_A.x-=2;
-                  res1.x = GetShortValue(WORKING_REG_A.x);
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_A.x-=4;
-                  res1.d = GetIntValue(WORKING_REG_A.x);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
+              if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                WORKING_REG_A.x-=2;
+                res1.x = GetShortValue(WORKING_REG_A.x);
+                }
+              else {
+                WORKING_REG_A.x-=4;
+                res1.d = GetIntValue(WORKING_REG_A.x);
                 }
               break;
             case ADDRDISPADD:   // (D16,An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case WORD_SIZE:
-                  res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case DWORD_SIZE:
-                  res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
+              if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
                 }
+              else {
+                res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                }
+              _pc+=2;
               break;
             case ADDRIDXADD:   // (D8,An,Xn)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case WORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case DWORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
+              if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                if(!DISPLACEMENT_SIZE)
+                  res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                else
+                  res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
                 }
+              else {
+                if(!DISPLACEMENT_SIZE)
+                  res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                else
+                  res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                }
+              _pc+=2;
               break;
             }
+          if(!(HIBYTE(Pipe1) & 0b00000001))  // size
+            DEST_REG_A.x -= (signed short int)res1.x;
+          else
+            DEST_REG_A.x -= res1.d;
+          // no flag qua
           }
-        else {
+        else {    // SUB SUBX
+          if(Pipe1 & 0b0000000100000000) { // direction... 
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // 
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.x.h);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.x.h);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.x.h);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    GetPipeExt(_pc);
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.d);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.d);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
+                    res1.d = Pipe2.d; 
+                    _pc+=4;
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = WORKING_REG_D.b.b0;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = WORKING_REG_D.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res1.x = WORKING_REG_D.x;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An qua SUBX ma VARREBBE ANCHE per DATAREG! v.altri..
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(--WORKING_REG_A.x);
+                    res2.b.l = GetValue(--DEST_REG_A.x);
+                    res3.x = res1.b.l - res2.b.l;
+                    PutValue(DEST_REG_A.x, res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetValue(WORKING_REG_A.x); WORKING_REG_A.x-=2;
+                    res2.x = GetValue(DEST_REG_A.x); DEST_REG_A.x-=2;
+                    res3.d = res1.x - res2.x;
+                    PutShortValue(DEST_REG_A.x, res3.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetValue(WORKING_REG_A.x); WORKING_REG_A.x-=4;
+                    res2.d = GetValue(DEST_REG_A.x); DEST_REG_A.x-=4;
+                    res3.d = res1.d - res2.d;
+                    PutIntValue(DEST_REG_A.x, res3.d);
+                    break;
+                  }
+                goto aggFlagC;
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    WORKING_REG_A.x--;
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    WORKING_REG_A.x-=2;
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    WORKING_REG_A.x-=4;
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  }
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  }
+                break;
+              }
+            }
+          else {
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                res1.b.l = WORKING_REG_D.b.b0;
+                break;
+              case WORD_SIZE:
+                res1.x = WORKING_REG_D.w.l;
+                break;
+              case DWORD_SIZE:
+                res1.d = WORKING_REG_D.x;
+                break;
+              }
+            }
+
+          if(Pipe1 & 0b0000000100000000) { // direction
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                res2.b.l = WORKING_REG_D.b.b0;
+                break;
+              case WORD_SIZE:
+                res2.x = WORKING_REG_D.w.l;
+                break;
+              case DWORD_SIZE:
+                res2.d = WORKING_REG_D.x;
+                break;
+              }
+            }
+          else {
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // #imm
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(Pipe2.x.h);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(Pipe2.x.h);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(Pipe2.x.h);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    GetPipeExt(_pc);
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(Pipe2.d);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(Pipe2.d);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(Pipe2.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
+                    res2.d = Pipe2.d; 
+                    _pc+=4;
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = WORKING_REG_D.b.b0;
+                    break;
+                  case WORD_SIZE:
+                    res2.x = WORKING_REG_D.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = WORKING_REG_D.x;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An
+                switch(OPERAND_SIZE) {
+                  case WORD_SIZE:
+                    res2.x = WORKING_REG_A.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = WORKING_REG_A.x;
+                    break;
+                  }
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    WORKING_REG_A.x--;
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    WORKING_REG_A.x-=2;
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    WORKING_REG_A.x-=4;
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              }
+            }
+
           switch(OPERAND_SIZE) {
             case BYTE_SIZE:
-              res1.b.l = WORKING_REG_D.b.b0;
+              res3.x = res1.b.l - res2.b.l;
               break;
             case WORD_SIZE:
-              res1.x = WORKING_REG_D.w.l;
+              res3.d = res1.x - res2.x;
               break;
             case DWORD_SIZE:
-              res1.d = WORKING_REG_D.x;
-              break;
-            case 0xc0:
+              res3.d = res1.d - res2.d;
               break;
             }
-          }
-        
-        if(Pipe1 & 0b0000000100000000) { // 
-          switch(OPERAND_SIZE) {
-            case BYTE_SIZE:
-              res2.b.l = WORKING_REG_D.b.b0;
-              break;
-            case WORD_SIZE:
-              res2.x = WORKING_REG_D.w.l;
-              break;
-            case DWORD_SIZE:
-              res2.d = WORKING_REG_D.x;
-              break;
-            case 0xc0:
-              break;
+
+          if(Pipe1 & 0b0000000100000000) { // direction
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // #imm
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(Pipe2.x.h, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(Pipe2.x.h, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(Pipe2.x.h, res3.d);
+                        break;
+                      }
+                    break;
+                  case ABSLSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(Pipe2.d, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(Pipe2.d, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(Pipe2.d, res3.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(_pc+(signed short int)Pipe2.w, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(_pc+(signed short int)Pipe2.w, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(_pc+(signed short int)Pipe2.w, res3.d);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l, res3.d);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
+                    res2.d = Pipe2.d; 
+                    _pc+=4;
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn qua NO!
+                break;
+              case ADDRREGADD:   // An
+                switch(OPERAND_SIZE) {
+                  case WORD_SIZE:
+                    WORKING_REG_A.w.l = res3.x;
+                    break;
+                  case DWORD_SIZE:
+                    WORKING_REG_A.x = res3.d;
+                    break;
+                  }
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    WORKING_REG_A.x++;
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    WORKING_REG_A.x+=2;
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.x);
+                    WORKING_REG_A.x+=4;
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.b.l);
+                    else
+                      PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.x);
+                    else
+                      PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.d);
+                    else
+                      PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.d);
+                    break;
+                  }
+                break;
+              }
             }
-          }
-        else {
-          switch(ADDRESSING) {
-            case IMMEDIATEADD:    // #imm
-              switch(LOBYTE(Pipe1) & 0b00000111) {    // questo, qua non è chiaro..
-                case 0b000:
-                  break;
-                case 0b001:
-                  break;
-                case 0b010:
-                  break;
-                case 0b011:
-                  break;
-                case 0b100:
-                  break;
-                }
-              break;
-            case DATAREGADD:   // Dn
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = WORKING_REG_D.b.b0;
-                  break;
-                case WORD_SIZE:
-                  res2.x = WORKING_REG_D.w.l;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = WORKING_REG_D.x;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRREGADD:   // An
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = WORKING_REG_A.b.b0;
-                  break;
-                case WORD_SIZE:
-                  res2.x = WORKING_REG_A.w.l;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = WORKING_REG_A.x;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              goto noAggFlag;
-              break;
-            case ADDRADD:   // (An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = GetValue(WORKING_REG_A.x);
-                  break;
-                case WORD_SIZE:
-                  res2.x = GetShortValue(WORKING_REG_A.x);
-                  break;
-                case DWORD_SIZE:
-                  res2.d = GetIntValue(WORKING_REG_A.x);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRPINCADD:   // (An)+
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = GetValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x++;
-                  break;
-                case WORD_SIZE:
-                  res2.x = GetShortValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x+=2;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = GetIntValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x+=4;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  WORKING_REG_A.x+=4;
-                  break;
-                }
-              break;
-            case ADDRPDECADD:   // -(An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_A.x--;
-                  res2.b.l = GetValue(WORKING_REG_A.x);
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_A.x-=2;
-                  res2.x = GetShortValue(WORKING_REG_A.x);
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_A.x-=4;
-                  res2.d = GetIntValue(WORKING_REG_A.x);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  WORKING_REG_A.x-=4;
-                  break;
-                }
-              break;
-            case ADDRDISPADD:   // (D16,An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case WORD_SIZE:
-                  res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case DWORD_SIZE:
-                  res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRIDXADD:   // (D8,An,Xn)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case WORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case DWORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
+          else {
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                WORKING_REG_D.b.b0 = res3.b.l;
+                break;
+              case WORD_SIZE:
+                WORKING_REG_D.w.l = res3.x;
+                break;
+              case DWORD_SIZE:
+                WORKING_REG_D.x = res3.d;
+                break;
+              }
             }
+          goto aggFlagC;
           }
-        
-        switch(OPERAND_SIZE) {
-          case BYTE_SIZE:
-            res3.x = res1.b.l - res2.b.l;
-            break;
-          case WORD_SIZE:
-            res3.d = res1.x - res2.x;
-            break;
-          case DWORD_SIZE:
-            res3.d = res1.d - res2.d;
-            break;
-          case 0xc0:
-            break;
-          }
-        
-        if(Pipe1 & 0b0000000100000000) { // 
-          switch(ADDRESSING) {
-            case IMMEDIATEADD:    // #imm
-              switch(LOBYTE(Pipe1) & 0b00000111) {    // questo, qua non è chiaro..
-                case 0b000:
-                  break;
-                case 0b001:
-                  break;
-                }
-              break;
-            case DATAREGADD:   // Dn
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_D.b.b0 = res3.b.l;
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_D.w.l = res3.x;
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_D.x += res3.d;
-                  break;
-                case 0xc0:
-                  break;
-                }
-              break;
-            case ADDRREGADD:   // An
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_A.b.b0 = res3.b.l;
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_A.w.l = res3.x;
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_A.x = res3.d;
-                  break;
-                case 0xc0:
-                  break;
-                }
-              break;
-            case ADDRADD:   // (An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  PutValue(WORKING_REG_A.x,res3.b.l);
-                  break;
-                case WORD_SIZE:
-                  PutShortValue(WORKING_REG_A.x,res3.x);
-                  break;
-                case DWORD_SIZE:
-                  PutIntValue(WORKING_REG_A.x,res3.d);
-                  break;
-                case 0xc0:
-                  break;
-                }
-              break;
-            case ADDRPINCADD:   // (An)+
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  PutValue(WORKING_REG_A.x,res3.b.l);
-                  WORKING_REG_A.x++;
-                  break;
-                case WORD_SIZE:
-                  PutShortValue(WORKING_REG_A.x,res3.x);
-                  WORKING_REG_A.x+=2;
-                  break;
-                case DWORD_SIZE:
-                  PutIntValue(WORKING_REG_A.x,res3.x);
-                  WORKING_REG_A.x+=4;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRPDECADD:   // -(An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_A.x--;
-                  PutValue(WORKING_REG_A.x,res3.b.l);
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_A.x-=2;
-                  PutShortValue(WORKING_REG_A.x,res3.x);
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_A.x-=4;
-                  PutIntValue(WORKING_REG_A.x,res3.d);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRDISPADD:   // (D16,An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  PutValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.b.l);
-                  break;
-                case WORD_SIZE:
-                  PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.x);
-                  break;
-                case DWORD_SIZE:
-                  PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.d);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRIDXADD:   // (D8,An,Xn)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.b.l);
-                  else
-                    PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.b.l);
-                  break;
-                case WORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.x);
-                  else
-                    PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.x);
-                  break;
-                case DWORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.d);
-                  else
-                    PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.d);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            }
-          }
-        else {
-          switch(OPERAND_SIZE) {
-            case BYTE_SIZE:
-              WORKING_REG_D.b.b0 = res3.b.l;
-              break;
-            case WORD_SIZE:
-              WORKING_REG_D.w.l = res3.x;
-              break;
-            case DWORD_SIZE:
-              WORKING_REG_D.x = res3.d;
-              break;
-            case 0xc0:
-              break;
-            }
-          }
-        
-        goto aggFlagC;
 				break;
         
 			case 0xb1:   // EOR CMPA CMPM
@@ -5661,19 +7193,25 @@ aggFlagD:
         if(OPERAND_SIZE == 0xc0) {    // CMPA
           if(Pipe1 & 0b0000000100000000) {
             switch(ADDRESSING) {
-              case ABSOLUTELADD:
+              case ABSOLUTEADD:
                 switch(ABSOLUTEADD_SIZE) {
-                  case 0:
-                GetPipeExt(_pc);
+                  case ABSSSUBADD:
                     res2.d = GetIntValue(Pipe2.x.h);
-                    _pc+=6;
+                    _pc+=2;
                     break;
-                  case 1:
-                GetPipeExt(_pc);
+                  case ABSLSUBADD:
                     res2.d = GetIntValue(Pipe2.d); 
-                    _pc+=6;
+                    _pc+=2;
                     break;
-                  case 4:
+                  case PCIDXSUBADD:   // (D16,PC)
+                    res2.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
                     res2.d = Pipe2.d; 
                     _pc+=4;
                     break;
@@ -5715,20 +7253,25 @@ aggFlagD:
             }
           else {
             switch(ADDRESSING) {
-              case ABSOLUTELADD:
+              case ABSOLUTEADD:
                 switch(ABSOLUTEADD_SIZE) {
-                  case 0:
-                GetPipeExt(_pc);
+                  case ABSSSUBADD:
                     res2.x = GetShortValue(Pipe2.x.h);
-                    _pc+=6;
+                    _pc+=2;
                     break;
-                  case 1:
-                GetPipeExt(_pc);
+                  case ABSLSUBADD:
                     res2.x = GetShortValue(Pipe2.d); 
-                    _pc+=6;
+                    _pc+=4;
                     break;
-                  case 4:
-                GetPipeExt(_pc);
+                  case PCIDXSUBADD:   // (D16,PC)
+                    res2.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
                     res2.x = Pipe2.x.l; 
                     _pc+=4;
                     break;
@@ -5772,21 +7315,40 @@ aggFlagD:
           }
         else {    // EOR CMPM
           switch(ADDRESSING) {
-            case ABSOLUTELADD:
+            case ABSOLUTEADD:
               switch(ABSOLUTEADD_SIZE) {
-                case 0:
-                GetPipeExt(_pc);
-                  res2.d = GetIntValue(Pipe2.x.h);
-                  _pc+=6;
+                case ABSSSUBADD:
+                  switch(OPERAND_SIZE) {
+                    case BYTE_SIZE:
+                      DEST_REG_D.b.b0 = GetValue(Pipe2.x.h) ^ Pipe2.b.l;
+                      break;
+                    case WORD_SIZE:
+                      DEST_REG_D.w.l = GetShortValue(Pipe2.x.h) ^ Pipe2.x.l;
+                      break;
+                    case DWORD_SIZE:
+                      DEST_REG_D.x = GetIntValue(Pipe2.x.h) ^ Pipe2.d;
+                      break;
+                    }
+                  _pc+=2;
                   break;
-                case 1:
-                GetPipeExt(_pc);
-                  res2.d = GetIntValue(Pipe2.d); 
-                  _pc+=6;
-                  break;
-                case 4:
-                  res2.d = Pipe2.d; 
+                case ABSLSUBADD:
+                  GetPipeExt(_pc);
+                  switch(OPERAND_SIZE) {
+                    case BYTE_SIZE:
+                      DEST_REG_D.b.b0 = GetValue(Pipe2.d) ^ Pipe2.b.l;
+                      break;
+                    case WORD_SIZE:
+                      DEST_REG_D.w.l = GetShortValue(Pipe2.d) ^ Pipe2.x.l;
+                      break;
+                    case DWORD_SIZE:
+                      DEST_REG_D.x = GetIntValue(Pipe2.d) ^ Pipe2.d;
+                      break;
+                    }
                   _pc+=4;
+                  break;
+                case PCIDXSUBADD:   // (D16,PC) qua NO!
+                case PCDISPSUBADD:   // (D8,Xn,PC)
+                case IMMSUBADD:
                   break;
                 }
               break;
@@ -5804,6 +7366,27 @@ aggFlagD:
                 }
               break;
             case ADDRREGADD:   // An; CMPM qua
+              switch(OPERAND_SIZE) {
+                case BYTE_SIZE:
+                  res1.b.l = GetValue(WORKING_REG_A.x);
+                  res2.b.l = GetValue(DEST_REG_A.x);
+                  res3.b.l = res1.b.l - res2.b.l;
+                  DEST_REG_A.x++; WORKING_REG_A.x++;
+                  break;
+                case WORD_SIZE:
+                  res1.x = GetShortValue(WORKING_REG_A.x);
+                  res2.x = GetShortValue(DEST_REG_A.x);
+                  res3.x = res1.x - res2.x;
+                  DEST_REG_A.x+=2; WORKING_REG_A.x+=2;
+                  break;
+                case DWORD_SIZE:
+                  res1.d = GetIntValue(WORKING_REG_A.x);
+                  res2.d = GetIntValue(DEST_REG_A.x);
+                  res3.d = res1.d - res2.d;
+                  DEST_REG_A.x+=4; WORKING_REG_A.x+=4;
+                  break;
+                }
+              goto aggFlagC;
               break;
             case ADDRADD:   // (An)
               if(Pipe1 & 0b0000000100000000) {
@@ -6000,7 +7583,70 @@ aggFlagD:
 			case 0xbc:
 			case 0xbe:
         switch(ADDRESSING) {
-          case ABSOLUTELADD:
+          case ABSOLUTEADD:
+            switch(ABSOLUTEADD_SIZE) {
+              case ABSSSUBADD:
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(Pipe2.x.h);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(Pipe2.x.h);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(Pipe2.x.h);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              case ABSLSUBADD:
+                GetPipeExt(_pc);
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(Pipe2.d);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(Pipe2.d);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(Pipe2.d);
+                    break;
+                  }
+                _pc+=4;
+                break;
+              case PCIDXSUBADD:   // (D16,PC)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(_pc+(signed short int)Pipe2.w);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              case PCDISPSUBADD:   // (D8,Xn,PC)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              case IMMSUBADD:
+                res2.d = Pipe2.d; 
+                _pc+=4;
+                break;
+              }
             break;
           case DATAREGADD:   // Dn
             switch(OPERAND_SIZE) {
@@ -6151,82 +7797,6 @@ aggFlagD:
 			case 0xca:
 			case 0xcc:
 			case 0xce:
-        switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            break;
-          case DATAREGADD:   // Dn
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = WORKING_REG_D.x * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRREGADD:   // An
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = WORKING_REG_A.x * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRADD:   // (An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = GetIntValue(WORKING_REG_A.x) * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRPINCADD:   // (An)+
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = GetIntValue(WORKING_REG_A.x) * Pipe2.x.l;
-                WORKING_REG_A.x+=4;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRPDECADD:   // -(An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                WORKING_REG_A.x-=4;
-                DEST_REG_D.x = GetIntValue(WORKING_REG_A.x) * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRDISPADD:   // (D16,An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w) * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRIDXADD:   // (D8,An,Xn)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                if(!DISPLACEMENT_SIZE) {
-                  DEST_REG_D.x = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l) * Pipe2.x.l;
-                  }
-                else {
-                  DEST_REG_D.x = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l) * Pipe2.x.l;
-                  }
-                break;
-              default:
-                break;
-              }
-            break;
-          }
-				break;
-        
 			case 0xc1:   // MULS ABCD EXG AND
 			case 0xc3:
 			case 0xc5:
@@ -6235,80 +7805,561 @@ aggFlagD:
 			case 0xcb:
 			case 0xcd:
 			case 0xcf:
-#warning finire MULU MULS
-        switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            break;
-          case DATAREGADD:   // Dn
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = WORKING_REG_D.x * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRREGADD:   // An
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = WORKING_REG_A.x * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRADD:   // (An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = GetIntValue(WORKING_REG_A.x) * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRPINCADD:   // (An)+
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = GetIntValue(WORKING_REG_A.x) * Pipe2.x.l;
-                WORKING_REG_A.x+=4;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRPDECADD:   // -(An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                WORKING_REG_A.x-=4;
-                DEST_REG_D.x = GetIntValue(WORKING_REG_A.x) * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRDISPADD:   // (D16,An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                DEST_REG_D.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w) * Pipe2.x.l;
-                break;
-              default:
-                break;
-              }
-            break;
-          case ADDRIDXADD:   // (D8,An,Xn)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                if(!DISPLACEMENT_SIZE) {
-                  DEST_REG_D.x = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l) * Pipe2.x.l;
+        if(OPERAND_SIZE == 0xc0) {    // MULU MULS
+// "forse" in 68020 ecc c'è anche una versione 32x32bit... (per cui qua non c'è OVF ma là forse sì..
+          res1.x=DEST_REG_D.w.l;
+          switch(ADDRESSING) {
+            case ABSOLUTEADD:
+              switch(ABSOLUTEADD_SIZE) {
+                case ABSSSUBADD:
+                  res2.x = GetShortValue(Pipe2.x.h);
+                  _pc+=2;
+                  break;
+                case ABSLSUBADD:
+                  GetPipeExt(_pc);
+                  res2.x = GetShortValue(Pipe2.d); 
+                  _pc+=4;
+                  break;
+                case PCIDXSUBADD:   // (D16,PC)
+                  res2.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                  _pc+=2;
+                  break;
+                case PCDISPSUBADD:   // (D8,Xn,PC)
+                  res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                  _pc+=2;
+                  break;
+                case IMMSUBADD:
+                  res2.x = Pipe2.w; 
+                  _pc+=4;
+                  break;
+                }
+              break;
+            case DATAREGADD:   // Dn
+              res2.x = WORKING_REG_D.w.l;
+              break;
+            case ADDRREGADD:   // An qua NO!
+              break;
+            case ADDRADD:   // (An)
+              res2.x = GetShortValue(WORKING_REG_A.x);
+              break;
+            case ADDRPINCADD:   // (An)+
+              res2.x = GetShortValue(WORKING_REG_A.x);
+              WORKING_REG_A.x+=4;
+              break;
+            case ADDRPDECADD:   // -(An)
+              WORKING_REG_A.x-=4;
+              res2.x = GetShortValue(WORKING_REG_A.x);
+              break;
+            case ADDRDISPADD:   // (D16,An)
+              res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+              break;
+            case ADDRIDXADD:   // (D8,An,Xn)
+              if(!DISPLACEMENT_SIZE) {
+                res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                }
+              else {
+                res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                }
+              break;
+            }
+          if(HIBYTE(Pipe1) & 0b00000001)      // MULS
+            res3.d = (signed int)res1.x * (signed int)res2.x;
+          else      // MULU
+            res3.d = res1.x * res2.x;
+          DEST_REG_D.x = res3.d;
+          goto aggFlag;
+          }
+        else {  // AND ABCD EXG
+          if(Pipe1 & 0b0000000100000000) { // direction... 
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // 
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.x.h);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.x.h);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.x.h);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    GetPipeExt(_pc);
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.d);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.d);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
+                    res1.d = Pipe2.d; 
+                    _pc+=4;
+                    break;
                   }
-                else {
-                  DEST_REG_D.x = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l) * Pipe2.x.l;
+                break;
+              case DATAREGADD:   // Dn
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = WORKING_REG_D.b.b0;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = WORKING_REG_D.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res1.x = WORKING_REG_D.x;
+                    break;
                   }
                 break;
-              default:
+              case ADDRREGADD:   // An qua ABCD
+                if(OPERAND_SIZE == 0) {
+                  res1.b.l = GetValue(--WORKING_REG_A.x);
+                  res2.b.l = GetValue(--DEST_REG_A.x);
+                  res3.x = (res1.b.l & 0xf) + (res2.b.l & 0xf) + _f.CCR.Ext;
+                  res3.x = (((res1.b.l & 0xf0) >> 4) + ((res2.b.l & 0xf0) >> 4) + (res3.b.h ? 1 : 0)) | 
+                            res3.b.l;
+                  PutValue(DEST_REG_A.x, res3.b.l);
+                  }
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    WORKING_REG_A.x--;
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    WORKING_REG_A.x-=2;
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    WORKING_REG_A.x-=4;
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  }
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  }
                 break;
               }
-            break;
+            }
+          else {
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                res1.b.l = WORKING_REG_D.b.b0;
+                break;
+              case WORD_SIZE:
+                res1.x = WORKING_REG_D.w.l;
+                break;
+              case DWORD_SIZE:
+                res1.d = WORKING_REG_D.x;
+                break;
+              }
+            }
+
+          if(Pipe1 & 0b0000000100000000) { // direction
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                res2.b.l = WORKING_REG_D.b.b0;
+                break;
+              case WORD_SIZE:
+                res2.x = WORKING_REG_D.w.l;
+                break;
+              case DWORD_SIZE:
+                res2.d = WORKING_REG_D.x;
+                break;
+              }
+            }
+          else {
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // #imm
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(Pipe2.x.h);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(Pipe2.x.h);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(Pipe2.x.h);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    GetPipeExt(_pc);
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(Pipe2.d);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(Pipe2.d);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(Pipe2.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC) qua NO!
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                  case IMMSUBADD:
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn .. in un punto il Doc dice questo no qua...
+                #warning MA VA IN CONFLITTO CON ABCD! v. anche sopra
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = WORKING_REG_D.b.b0;
+                    break;
+                  case WORD_SIZE:
+                    res2.x = WORKING_REG_D.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = WORKING_REG_D.x;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    WORKING_REG_A.x--;
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    WORKING_REG_A.x-=2;
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    WORKING_REG_A.x-=4;
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              }
+            }
+
+          switch(OPERAND_SIZE) {
+            case BYTE_SIZE:
+              res3.x = res1.b.l & res2.b.l;
+              break;
+            case WORD_SIZE:
+              res3.d = res1.x & res2.x;
+              break;
+            case DWORD_SIZE:
+              res3.d = res1.d & res2.d;
+              break;
+            }
+
+          if(Pipe1 & 0b0000000100000000) { // direction
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // #imm
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(Pipe2.x.h, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(Pipe2.x.h, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(Pipe2.x.h, res3.d);
+                        break;
+                      }
+                    break;
+                  case ABSLSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(Pipe2.d, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(Pipe2.d, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(Pipe2.d, res3.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC) qua NO!
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                  case IMMSUBADD:
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn .. in un punto il Doc dice questo no qua...
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    DEST_REG_D.b.b0 = res3.b.l;
+                    break;
+                  case WORD_SIZE:
+                    DEST_REG_D.w.l = res3.x;
+                    break;
+                  case DWORD_SIZE:
+                    DEST_REG_D.x = res3.d;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An qua NO!
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    WORKING_REG_A.x++;
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    WORKING_REG_A.x+=2;
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.x);
+                    WORKING_REG_A.x+=4;
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.b.l);
+                    else
+                      PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.x);
+                    else
+                      PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.d);
+                    else
+                      PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.d);
+                    break;
+                  }
+                break;
+              }
+            }
+          else {
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                WORKING_REG_D.b.b0 = res3.b.l;
+                break;
+              case WORD_SIZE:
+                WORKING_REG_D.w.l = res3.x;
+                break;
+              case DWORD_SIZE:
+                WORKING_REG_D.x = res3.d;
+                break;
+              }
+            }
+          goto aggFlag;
           }
 				break;
         
@@ -6328,728 +8379,652 @@ aggFlagD:
 			case 0xdd:
 			case 0xde:
 			case 0xdf:
-        if(Pipe1 & 0b0000000100000000) { // direction... 
+        if(OPERAND_SIZE == 0xc0) { // ADDA
           switch(ADDRESSING) {
-            case IMMEDIATEADD:    // #imm
-              switch(LOBYTE(Pipe1) & 0b00000111) {    // questo, qua non è chiaro..
-                case 0b000:
+            case ABSOLUTEADD:    // 
+              switch(ABSOLUTEADD_SIZE) {
+                case ABSSSUBADD:
+                  if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                    res1.x = GetShortValue(Pipe2.x.h);
+                    }
+                  else {
+                    res1.d = GetIntValue(Pipe2.x.h);
+                    }
+                  _pc+=2;
                   break;
-                case 0b001:
+                case ABSLSUBADD:
+                  GetPipeExt(_pc);
+                  if(!(HIBYTE(Pipe1) & 0b00000001)) { // 
+                    res1.x = GetShortValue(Pipe2.d);
+                    }
+                  else {
+                    res1.d = GetIntValue(Pipe2.d);
+                    }
+                  _pc+=4;
                   break;
-                case 0b010:
+                case PCIDXSUBADD:   // (D16,PC)
+                  if(!(HIBYTE(Pipe1) & 0b00000001)) { // 
+                    res3.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                    }
+                  else {
+                    res3.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                    }
+                  _pc+=2;
                   break;
-                case 0b011:
+                case PCDISPSUBADD:   // (D8,Xn,PC)
+                  if(!(HIBYTE(Pipe1) & 0b00000001)) { // 
+                    res3.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    }
+                  else {
+                    res3.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    }
+                  _pc+=2;
                   break;
-                case 0b100:
-                  break;
-                }
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  DEST_REG_D.b.b0 += Pipe2.b.l;
-                  break;
-                case WORD_SIZE:
-                  DEST_REG_D.w.l += Pipe2.x.l;
-                  break;
-                case DWORD_SIZE:
-                  DEST_REG_D.x += Pipe2.d;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  regsA.r[(Pipe1 >> 9) & 7].x = WORKING_REG_D.x + Pipe2.d;
+                case IMMSUBADD:
+                  res3.d = Pipe2.d; // boh
+                  _pc+=4;
                   break;
                 }
               break;
             case DATAREGADD:   // Dn
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = WORKING_REG_D.b.b0;
-                  break;
-                case WORD_SIZE:
-                  res1.x = WORKING_REG_D.w.l;
-                  break;
-                case DWORD_SIZE:
-                  res1.x = WORKING_REG_D.x;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
+              if(!(HIBYTE(Pipe1) & 0b00000001))  // size
+                res1.x = WORKING_REG_D.w.l;
+              else
+                res1.d = WORKING_REG_D.x;
               break;
             case ADDRREGADD:   // An
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = WORKING_REG_A.b.b0;
-                  break;
-                case WORD_SIZE:
-                  res1.x = WORKING_REG_A.w.l;
-                  break;
-                case DWORD_SIZE:
-                  res1.d = WORKING_REG_A.x;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              goto noAggFlag;
+              if(!(HIBYTE(Pipe1) & 0b00000001))  // size
+                res1.x = WORKING_REG_A.w.l;
+              else
+                res1.d = WORKING_REG_A.x;
               break;
             case ADDRADD:   // (An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = GetValue(WORKING_REG_A.x);
-                  break;
-                case WORD_SIZE:
-                  res1.x = GetShortValue(WORKING_REG_A.x);
-                  break;
-                case DWORD_SIZE:
-                  res1.d = GetIntValue(WORKING_REG_A.x);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
+              if(!(HIBYTE(Pipe1) & 0b00000001))  // 
+                res1.x = GetShortValue(WORKING_REG_A.x);
+              else
+                res1.d = GetIntValue(WORKING_REG_A.x);
               break;
             case ADDRPINCADD:   // (An)+
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = GetValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x++;
-                  break;
-                case WORD_SIZE:
-                  res1.x = GetShortValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x+=2;
-                  break;
-                case DWORD_SIZE:
-                  res1.d = GetIntValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x+=4;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  WORKING_REG_A.x+=4;
-                  break;
+              if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                res1.x = GetShortValue(WORKING_REG_A.x);
+                WORKING_REG_A.x+=2;
+                }
+              else {
+                res1.d = GetIntValue(WORKING_REG_A.x);
+                WORKING_REG_A.x+=4;
                 }
               break;
             case ADDRPDECADD:   // -(An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_A.x--;
-                  res1.b.l = GetValue(WORKING_REG_A.x);
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_A.x-=2;
-                  res1.x = GetShortValue(WORKING_REG_A.x);
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_A.x-=4;
-                  res1.d = GetIntValue(WORKING_REG_A.x);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
+              if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                WORKING_REG_A.x-=2;
+                res1.x = GetShortValue(WORKING_REG_A.x);
+                }
+              else {
+                WORKING_REG_A.x-=4;
+                res1.d = GetIntValue(WORKING_REG_A.x);
                 }
               break;
             case ADDRDISPADD:   // (D16,An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case WORD_SIZE:
-                  res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case DWORD_SIZE:
-                  res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
+              if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
                 }
+              else {
+                res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                }
+              _pc+=2;
               break;
             case ADDRIDXADD:   // (D8,An,Xn)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case WORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case DWORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
+              if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
+                if(!DISPLACEMENT_SIZE)
+                  res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                else
+                  res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
                 }
+              else {
+                if(!DISPLACEMENT_SIZE)
+                  res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                else
+                  res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                }
+              _pc+=2;
               break;
             }
+          if(!(HIBYTE(Pipe1) & 0b00000001))  // size
+            DEST_REG_A.x += (signed short int)res1.x;
+          else
+            DEST_REG_A.x += res1.d;
+          // no flag qua
           }
-        else {
+        else {    // ADD ADDX
+          if(Pipe1 & 0b0000000100000000) { // direction... 
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // 
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.x.h);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.x.h);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.x.h);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    GetPipeExt(_pc);
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(Pipe2.d);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(Pipe2.d);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(Pipe2.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(_pc+(signed short int)Pipe2.w);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case WORD_SIZE:
+                        res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      case DWORD_SIZE:
+                        res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case IMMSUBADD:
+                    res1.d = Pipe2.d; 
+                    _pc+=4;
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = WORKING_REG_D.b.b0;
+                    break;
+                  case WORD_SIZE:
+                    res1.x = WORKING_REG_D.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res1.x = WORKING_REG_D.x;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An  qua ADDX PERO' VARREBBE ANCHE per DATAREG! (v. altri casi..)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(--WORKING_REG_A.x);
+                    res2.b.l = GetValue(--DEST_REG_A.x);
+                    res3.x = res1.b.l + res2.b.l;
+                    PutValue(DEST_REG_A.x, res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetValue(WORKING_REG_A.x); WORKING_REG_A.x-=2;
+                    res2.x = GetValue(DEST_REG_A.x); DEST_REG_A.x-=2;
+                    res3.d = res1.x + res2.x;
+                    PutShortValue(DEST_REG_A.x, res3.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetValue(WORKING_REG_A.x); WORKING_REG_A.x-=4;
+                    res2.d = GetValue(DEST_REG_A.x); DEST_REG_A.x-=4;
+                    res3.d = res1.d + res2.d;
+                    PutIntValue(DEST_REG_A.x, res3.d);
+                    break;
+                  }
+                goto aggFlagC;
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    WORKING_REG_A.x--;
+                    res1.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    WORKING_REG_A.x-=2;
+                    res1.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    WORKING_REG_A.x-=4;
+                    res1.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case WORD_SIZE:
+                    res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case DWORD_SIZE:
+                    res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  }
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res1.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  }
+                break;
+              }
+            }
+          else {
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                res1.b.l = WORKING_REG_D.b.b0;
+                break;
+              case WORD_SIZE:
+                res1.x = WORKING_REG_D.w.l;
+                break;
+              case DWORD_SIZE:
+                res1.d = WORKING_REG_D.x;
+                break;
+              }
+            }
+
+          if(Pipe1 & 0b0000000100000000) { // direction
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                res2.b.l = WORKING_REG_D.b.b0;
+                break;
+              case WORD_SIZE:
+                res2.x = WORKING_REG_D.w.l;
+                break;
+              case DWORD_SIZE:
+                res2.d = WORKING_REG_D.x;
+                break;
+              }
+            }
+          else {
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // #imm
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(Pipe2.x.h);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(Pipe2.x.h);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(Pipe2.x.h);
+                        break;
+                      }
+                    _pc+=2;
+                    break;
+                  case ABSLSUBADD:
+                    GetPipeExt(_pc);
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        res2.b.l = GetValue(Pipe2.d);
+                        break;
+                      case WORD_SIZE:
+                        res2.x = GetShortValue(Pipe2.d);
+                        break;
+                      case DWORD_SIZE:
+                        res2.d = GetIntValue(Pipe2.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC) qua no!
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                  case IMMSUBADD:
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = WORKING_REG_D.b.b0;
+                    break;
+                  case WORD_SIZE:
+                    res2.x = WORKING_REG_D.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = WORKING_REG_D.x;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An
+                switch(OPERAND_SIZE) {
+                  case WORD_SIZE:
+                    res2.x = WORKING_REG_A.w.l;
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = WORKING_REG_A.x;
+                    break;
+                  }
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    WORKING_REG_A.x--;
+                    res2.b.l = GetValue(WORKING_REG_A.x);
+                    break;
+                  case WORD_SIZE:
+                    WORKING_REG_A.x-=2;
+                    res2.x = GetShortValue(WORKING_REG_A.x);
+                    break;
+                  case DWORD_SIZE:
+                    WORKING_REG_A.x-=4;
+                    res2.d = GetIntValue(WORKING_REG_A.x);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case WORD_SIZE:
+                    res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  case DWORD_SIZE:
+                    res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                    else
+                      res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                    break;
+                  }
+                _pc+=2;
+                break;
+              }
+            }
+
           switch(OPERAND_SIZE) {
             case BYTE_SIZE:
-              res1.b.l = WORKING_REG_D.b.b0;
+              res3.x = res1.b.l + res2.b.l;
               break;
             case WORD_SIZE:
-              res1.x = WORKING_REG_D.w.l;
+              res3.d = res1.x + res2.x;
               break;
             case DWORD_SIZE:
-              res1.d = WORKING_REG_D.x;
-              break;
-            case 0xc0:
+              res3.d = res1.d + res2.d;
               break;
             }
-          }
-        
-        if(Pipe1 & 0b0000000100000000) { // 
-          switch(OPERAND_SIZE) {
-            case BYTE_SIZE:
-              res2.b.l = WORKING_REG_D.b.b0;
-              break;
-            case WORD_SIZE:
-              res2.x = WORKING_REG_D.w.l;
-              break;
-            case DWORD_SIZE:
-              res2.d = WORKING_REG_D.x;
-              break;
-            case 0xc0:
-              break;
+
+          if(Pipe1 & 0b0000000100000000) { // direction
+            switch(ADDRESSING) {
+              case ABSOLUTEADD:    // #imm
+                switch(ABSOLUTEADD_SIZE) {
+                  case ABSSSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(Pipe2.x.h, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(Pipe2.x.h, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(Pipe2.x.h, res3.d);
+                        break;
+                      }
+                    break;
+                  case ABSLSUBADD:
+                    switch(OPERAND_SIZE) {
+                      case BYTE_SIZE:
+                        PutValue(Pipe2.d, res3.b.l);
+                        break;
+                      case WORD_SIZE:
+                        PutShortValue(Pipe2.d, res3.x);
+                        break;
+                      case DWORD_SIZE:
+                        PutIntValue(Pipe2.d, res3.d);
+                        break;
+                      }
+                    _pc+=4;
+                    break;
+                  case PCIDXSUBADD:   // (D16,PC) qua NO!
+                  case PCDISPSUBADD:   // (D8,Xn,PC)
+                  case IMMSUBADD:
+                    break;
+                  }
+                break;
+              case DATAREGADD:   // Dn .. in un punto il Doc dice questo no qua...
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    DEST_REG_D.b.b0 = res3.b.l;
+                    break;
+                  case WORD_SIZE:
+                    DEST_REG_D.w.l = res3.x;
+                    break;
+                  case DWORD_SIZE:
+                    DEST_REG_D.x = res3.d;
+                    break;
+                  }
+                break;
+              case ADDRREGADD:   // An
+                switch(OPERAND_SIZE) {
+                  case WORD_SIZE:
+                    DEST_REG_A.w.l = res3.x;
+                    break;
+                  case DWORD_SIZE:
+                    DEST_REG_A.x = res3.d;
+                    break;
+                  }
+                break;
+              case ADDRADD:   // (An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRPINCADD:   // (An)+
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    WORKING_REG_A.x++;
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    WORKING_REG_A.x+=2;
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.x);
+                    WORKING_REG_A.x+=4;
+                    break;
+                  }
+                break;
+              case ADDRPDECADD:   // -(An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRDISPADD:   // (D16,An)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    PutValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.d);
+                    break;
+                  }
+                break;
+              case ADDRIDXADD:   // (D8,An,Xn)
+                switch(OPERAND_SIZE) {
+                  case BYTE_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.b.l);
+                    else
+                      PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.b.l);
+                    break;
+                  case WORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.x);
+                    else
+                      PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.x);
+                    break;
+                  case DWORD_SIZE:
+                    if(!DISPLACEMENT_SIZE)
+                      PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.d);
+                    else
+                      PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.d);
+                    break;
+                  }
+                break;
+              }
             }
-          }
-        else {
-          switch(ADDRESSING) {
-            case IMMEDIATEADD:    // #imm
-              switch(LOBYTE(Pipe1) & 0b00000111) {    // questo, qua non è chiaro..
-                case 0b000:
-                  break;
-                case 0b001:
-                  break;
-                }
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = Pipe2.b.l;
-                  break;
-                case WORD_SIZE:
-                  res2.x = Pipe2.x.l;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = Pipe2.d;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case DATAREGADD:   // Dn
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = WORKING_REG_D.b.b0;
-                  break;
-                case WORD_SIZE:
-                  res2.x = WORKING_REG_D.w.l;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = WORKING_REG_D.x;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRREGADD:   // An
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = WORKING_REG_A.b.b0;
-                  break;
-                case WORD_SIZE:
-                  res2.x = WORKING_REG_A.w.l;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = WORKING_REG_A.x;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              goto noAggFlag;
-              break;
-            case ADDRADD:   // (An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = GetValue(WORKING_REG_A.x);
-                  break;
-                case WORD_SIZE:
-                  res2.x = GetShortValue(WORKING_REG_A.x);
-                  break;
-                case DWORD_SIZE:
-                  res2.d = GetIntValue(WORKING_REG_A.x);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRPINCADD:   // (An)+
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = GetValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x++;
-                  break;
-                case WORD_SIZE:
-                  res2.x = GetShortValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x+=2;
-                  break;
-                case DWORD_SIZE:
-                  res2.d = GetIntValue(WORKING_REG_A.x);
-                  WORKING_REG_A.x+=4;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  WORKING_REG_A.x+=4;
-                  break;
-                }
-              break;
-            case ADDRPDECADD:   // -(An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_A.x--;
-                  res2.b.l = GetValue(WORKING_REG_A.x);
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_A.x-=2;
-                  res2.x = GetShortValue(WORKING_REG_A.x);
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_A.x-=4;
-                  res2.d = GetIntValue(WORKING_REG_A.x);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  WORKING_REG_A.x-=4;
-                  break;
-                }
-              break;
-            case ADDRDISPADD:   // (D16,An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case WORD_SIZE:
-                  res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case DWORD_SIZE:
-                  res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRIDXADD:   // (D8,An,Xn)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res2.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res2.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case WORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res2.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res2.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case DWORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    res2.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  else
-                    res2.d = GetIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
+          else {
+            switch(OPERAND_SIZE) {
+              case BYTE_SIZE:
+                WORKING_REG_D.b.b0 = res3.b.l;
+                break;
+              case WORD_SIZE:
+                WORKING_REG_D.w.l = res3.x;
+                break;
+              case DWORD_SIZE:
+                WORKING_REG_D.x = res3.d;
+                break;
+              }
             }
+          goto aggFlagC;
           }
-        
-        switch(OPERAND_SIZE) {
-          case BYTE_SIZE:
-            res3.x = res1.b.l + res2.b.l;
-            break;
-          case WORD_SIZE:
-            res3.d = res1.x + res2.x;
-            break;
-          case DWORD_SIZE:
-            res3.d = res1.d + res2.d;
-            break;
-          case 0xc0:
-            break;
-          }
-        
-        if(Pipe1 & 0b0000000100000000) { // 
-          switch(ADDRESSING) {
-            case IMMEDIATEADD:    // #imm
-              break;
-            case DATAREGADD:   // Dn
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_D.b.b0 = res3.b.l;
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_D.w.l = res3.x;
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_D.x += res3.d;
-                  break;
-                case 0xc0:
-                  break;
-                }
-              break;
-            case ADDRREGADD:   // An
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_A.b.b0 = res3.b.l;
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_A.w.l = res3.x;
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_A.x = res3.d;
-                  break;
-                case 0xc0:
-                  break;
-                }
-              break;
-            case ADDRADD:   // (An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  PutValue(WORKING_REG_A.x,res3.b.l);
-                  break;
-                case WORD_SIZE:
-                  PutShortValue(WORKING_REG_A.x,res3.x);
-                  break;
-                case DWORD_SIZE:
-                  PutIntValue(WORKING_REG_A.x,res3.d);
-                  break;
-                case 0xc0:
-                  break;
-                }
-              break;
-            case ADDRPINCADD:   // (An)+
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  PutValue(WORKING_REG_A.x,res3.b.l);
-                  WORKING_REG_A.x++;
-                  break;
-                case WORD_SIZE:
-                  PutShortValue(WORKING_REG_A.x,res3.x);
-                  WORKING_REG_A.x+=2;
-                  break;
-                case DWORD_SIZE:
-                  PutIntValue(WORKING_REG_A.x,res3.x);
-                  WORKING_REG_A.x+=4;
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRPDECADD:   // -(An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  WORKING_REG_A.x--;
-                  PutValue(WORKING_REG_A.x,res3.b.l);
-                  break;
-                case WORD_SIZE:
-                  WORKING_REG_A.x-=2;
-                  PutShortValue(WORKING_REG_A.x,res3.x);
-                  break;
-                case DWORD_SIZE:
-                  WORKING_REG_A.x-=4;
-                  PutIntValue(WORKING_REG_A.x,res3.d);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRDISPADD:   // (D16,An)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  PutValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.b.l);
-                  break;
-                case WORD_SIZE:
-                  PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.x);
-                  break;
-                case DWORD_SIZE:
-                  PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l,res3.d);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            case ADDRIDXADD:   // (D8,An,Xn)
-              switch(OPERAND_SIZE) {
-                case BYTE_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.b.l);
-                  else
-                    PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.b.l);
-                  break;
-                case WORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.x);
-                  else
-                    PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.x);
-                  break;
-                case DWORD_SIZE:
-                  if(!DISPLACEMENT_SIZE)
-                    PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.d);
-                  else
-                    PutIntValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.d);
-                  break;
-                case 0xc0:
-  #warning finire word long
-                  break;
-                }
-              break;
-            }
-          }
-        else {
-          switch(OPERAND_SIZE) {
-            case BYTE_SIZE:
-              WORKING_REG_D.b.b0 = res3.b.l;
-              break;
-            case WORD_SIZE:
-              WORKING_REG_D.w.l = res3.x;
-              break;
-            case DWORD_SIZE:
-              WORKING_REG_D.x = res3.d;
-              break;
-            case 0xc0:
-              break;
-            }
-          }
-        
-        // OCCHIO ADDA non tocca flag! gestire
-        goto aggFlagC;
 				break;
         
 			case 0xe0:   // ASd
 			case 0xe1:
-        switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            break;
-          case DATAREGADD:   // Dn
-                if(Pipe1 & 0b0000000100000000)  // rotate direction... FARE
-                  ;
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRREGADD:   // An
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRADD:   // (An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRPINCADD:   // (An)+
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRPDECADD:   // -(An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRDISPADD:   // (D16,An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRIDXADD:   // (D8,An,Xn)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          }
-				break;
-        
 			case 0xe2:   // LSd
 			case 0xe3:
-        switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            break;
-          case DATAREGADD:   // Dn
-                if(Pipe1 & 0b0000000100000000)  // rotate direction... FARE
-                  ;
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRREGADD:   // An
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRADD:   // (An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRPINCADD:   // (An)+
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRPDECADD:   // -(An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRDISPADD:   // (D16,An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRIDXADD:   // (D8,An,Xn)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          }
-				break;
-        
 			case 0xe4:   // ROXd
 			case 0xe5:
-        switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            break;
-          case DATAREGADD:   // Dn
-                if(Pipe1 & 0b0000000100000000)  // rotate direction... FARE
-                  ;
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRREGADD:   // An
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRADD:   // (An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRPINCADD:   // (An)+
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRPDECADD:   // -(An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRDISPADD:   // (D16,An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRIDXADD:   // (D8,An,Xn)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          }
-				break;
-        
 			case 0xe6:   // ROd
 			case 0xe7:
-        switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            break;
-                if(Pipe1 & 0b0000000100000000)  // rotate direction... FARE
-                  ;
-          case DATAREGADD:   // Dn
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRREGADD:   // An
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRADD:   // (An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRPINCADD:   // (An)+
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRPDECADD:   // -(An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRDISPADD:   // (D16,An)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          case ADDRIDXADD:   // (D8,An,Xn)
-            switch(OPERAND_SIZE) {
-              case 0xc0:
-                break;
-              }
-            break;
-          }
-				break;
-        
 			case 0xe8:   // ASd LSd ROXd ROd
 			case 0xe9:
 			case 0xea:
@@ -7058,194 +9033,398 @@ aggFlagD:
 			case 0xed:
 			case 0xee:
 			case 0xef:
-        switch(Pipe1 & 0b0000111000000000) { // rotate direction... FARE
-#warning USARE HIBYTE per codice migliore!
-          case 0b0000000000000000:
-            break;
-          case 0b0000001000000000:
-            break;
-          case 0b0000010000000000:
-            break;
-          case 0b0000011000000000:
-            break;
-          case 0b0000100000000000:
-            break;
-          case 0b0000101000000000:
-            break;
-          case 0b0000110000000000:
-            break;
-          case 0b0000111000000000:
-            break;
+        if(OPERAND_SIZE == 0xc0) {
+          res2.b.l=1;
+          switch(ADDRESSING) {
+            case ABSOLUTEADD:
+              switch(ABSOLUTEADD_SIZE) {
+                case ABSSSUBADD:
+                  res1.x = GetShortValue(Pipe2.x.h);
+                  _pc+=2;
+                  break;
+                case ABSLSUBADD:
+                  res1.x = GetShortValue(Pipe2.d); 
+                  _pc+=4;
+                  break;
+                case PCIDXSUBADD:   // (D16,PC)
+                  res1.x = GetShortValue(_pc+(signed short int)Pipe2.w);
+                  _pc+=2;
+                  break;
+                case PCDISPSUBADD:   // (D8,Xn,PC)
+                  res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
+                  _pc+=2;
+                  break;
+                case IMMSUBADD:
+                  res1.x = Pipe2.d; // boh
+                  _pc+=4;
+                  break;
+                }
+              break;
+            case DATAREGADD:   // Dn NO!
+            case ADDRREGADD:   // An NO!
+              break;
+            case ADDRADD:   // (An)
+              res1.x = GetShortValue(WORKING_REG_A.x);
+              break;
+            case ADDRPINCADD:   // (An)+
+              res1.x = GetShortValue(WORKING_REG_A.x);
+              break;
+            case ADDRPDECADD:   // -(An)
+              WORKING_REG_A.x-=2;
+              res1.x = GetShortValue(WORKING_REG_A.x);
+              break;
+            case ADDRDISPADD:   // (D16,An)
+              res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
+              _pc+=2;
+              break;
+            case ADDRIDXADD:   // (D8,An,Xn)
+              if(!DISPLACEMENT_SIZE) {
+                res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
+                }
+              else {
+                res1.x = GetShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l)  << Pipe2.d;
+                }
+              _pc+=2;
+              break;
+            }
+          
+          switch(HIBYTE(Pipe1) & 0b00000110) {
+            case 0b000:   //ASd
+              if(Pipe1 & 0b0000000100000000)  // rotate direction
+                res3.x = res1.x << res2.b.l;
+              else
+                res3.x = (signed short int)res1.x >> res2.b.l;
+              goto aggFlagRC;
+              break;
+            case 0b010:   //LSd
+              if(Pipe1 & 0b0000000100000000)  // rotate direction
+                res3.x = res1.x << res2.b.l;
+              else
+                res3.x = res1.x >> res2.b.l;
+              goto aggFlagRC;
+              break;
+            case 0b100:   //ROXd
+              if(Pipe1 & 0b0000000100000000) {  // rotate direction
+                res3.x = res1.x << res2.b.l;
+                if(_f.CCR.Ext)
+                  res3.x |= 1;
+                }
+              else {
+                res3.x = res1.x >> res2.b.l;
+                if(_f.CCR.Ext)
+                  res3.x |= 0x8000;
+                }
+              if(res2.b.l) {
+                if(Pipe1 & 0b0000000100000000)  // 
+                  _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x8000 ? 1 : 0;
+                else
+                  _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x0001;
+                }
+              else {
+                _f.CCR.Carry=_f.CCR.Ext;
+                }
+              break;
+            case 0b110:   //ROd
+              if(Pipe1 & 0b0000000100000000) { // rotate direction
+                res3.x = res1.x << res2.b.l;
+                if(res1.x & 0x8000)
+                  res3.x |= 1;
+                }
+              else {
+                res3.x = res1.x >> res2.b.l;
+                if(res1.x & 1)
+                  res3.x |= 0x8000;
+                }
+              
+aggFlagRC:
+              if(res2.b.l) {
+                if(Pipe1 & 0b0000000100000000)
+                  _f.CCR.Carry=res1.x & 0x8000 ? 1 : 0;
+                else
+                  _f.CCR.Carry=res1.x & 0x0001;
+                }
+              else
+                _f.CCR.Carry=0;
+              break;
+            }
+        
+          switch(ADDRESSING) {
+            case ABSOLUTEADD:
+              switch(ABSOLUTEADD_SIZE) {
+                case ABSSSUBADD:
+                  PutShortValue(Pipe2.x.h,res3.x);
+                  break;
+                case ABSLSUBADD:
+                  PutShortValue(Pipe2.d,res3.x); 
+                  break;
+                case PCIDXSUBADD:   // (D16,PC)
+                  PutShortValue(_pc+(signed short int)Pipe2.w,res3.x);
+                  break;
+                case PCDISPSUBADD:   // (D8,Xn,PC)
+                  PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.x);
+                  break;
+                case IMMSUBADD:
+                  break;
+                }
+              break;
+            case DATAREGADD:   // Dn NO!
+            case ADDRREGADD:   // An NO!
+              break;
+            case ADDRADD:   // (An)
+              PutShortValue(WORKING_REG_A.x,res3.x);
+              break;
+            case ADDRPINCADD:   // (An)+
+              PutShortValue(WORKING_REG_A.x,res3.x);
+              WORKING_REG_A.x+=2;
+              break;
+            case ADDRPDECADD:   // -(An)
+              PutShortValue(WORKING_REG_A.x,res3.x);
+              break;
+            case ADDRDISPADD:   // (D16,An)
+              PutShortValue(WORKING_REG_A.x,res3.x);
+              break;
+            case ADDRIDXADD:   // (D8,An,Xn)
+              if(!DISPLACEMENT_SIZE) {
+                PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.x);
+                }
+              else {
+                PutShortValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.x);
+                }
+              break;
+            }
+          goto aggFlagR2;
           }
-        switch(ADDRESSING) {
-          case ABSOLUTELADD:
-            break;
-          case DATAREGADD:   // Dn
-            switch(OPERAND_SIZE) {
-              case BYTE_SIZE:
-                res1.b.l=WORKING_REG_D.b.b0;
-                WORKING_REG_D.b.b0 <<= Pipe2.b.l;
-                break;
-              case WORD_SIZE:
-                res1.x=WORKING_REG_D.w.l;
-                WORKING_REG_D.w.l <<= Pipe2.x.l;
-                break;
-              case DWORD_SIZE:
-                res1.d=WORKING_REG_D.x;
-                WORKING_REG_D.x <<= Pipe2.d;
-                break;
-              }
-            break;
-          case ADDRREGADD:   // An NO!
-            break;
-          case ADDRADD:   // (An)
-            switch(OPERAND_SIZE) {
-              case BYTE_SIZE:
-                res1.b.l = GetValue(WORKING_REG_A.x);
-                res3.b.l = res1.b.l << Pipe2.d;
-                PutValue(WORKING_REG_A.x,res3.b.l);
-                break;
-              case WORD_SIZE:
-                res1.x = GetShortValue(WORKING_REG_A.x);
-                res3.x = res1.x << Pipe2.d;
-                PutShortValue(WORKING_REG_A.x,res3.x);
-                break;
-              case DWORD_SIZE:
-                res1.d = GetIntValue(WORKING_REG_A.x);
-                res3.d = res1.d << Pipe2.d;
-                PutIntValue(WORKING_REG_A.x,res3.d);
-                break;
-              }
-            break;
-          case ADDRPINCADD:   // (An)+
-            switch(OPERAND_SIZE) {
-              case BYTE_SIZE:
-                res1.b.l = GetValue(WORKING_REG_A.x);
-                res3.b.l = res1.b.l << Pipe2.d;
-                PutValue(WORKING_REG_A.x,res3.b.l);
-                WORKING_REG_A.x++;
-                break;
-              case WORD_SIZE:
-                res1.x = GetShortValue(WORKING_REG_A.x);
-                res3.x = res1.x << Pipe2.d;
-                PutShortValue(WORKING_REG_A.x,res3.x);
-                WORKING_REG_A.x+=2;
-                break;
-              case DWORD_SIZE:
-                res1.d = GetIntValue(WORKING_REG_A.x);
-                res3.d = res1.d << Pipe2.d;
-                PutIntValue(WORKING_REG_A.x,res3.d);
-                WORKING_REG_A.x+=4;
-                break;
-              }
-            break;
-          case ADDRPDECADD:   // -(An)
-            switch(OPERAND_SIZE) {
-              case BYTE_SIZE:
-                WORKING_REG_A.x--;
-                res1.b.l = GetValue(WORKING_REG_A.x);
-                res3.b.l = res1.b.l << Pipe2.d;
-                PutValue(WORKING_REG_A.x,res3.b.l);
-                break;
-              case WORD_SIZE:
-                WORKING_REG_A.x-=2;
-                res1.x = GetShortValue(WORKING_REG_A.x);
-                res3.x = res1.x << Pipe2.d;
-                PutShortValue(WORKING_REG_A.x,res3.x);
-                break;
-              case DWORD_SIZE:
-                WORKING_REG_A.x-=4;
-                res1.d = GetIntValue(WORKING_REG_A.x);
-                res3.d = res1.d << Pipe2.d;
-                PutIntValue(WORKING_REG_A.x,res3.d);
-                break;
-              }
-            break;
-          case ADDRDISPADD:   // (D16,An)
-            switch(OPERAND_SIZE) {
-              case BYTE_SIZE:
-                res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                res3.b.l = res1.b.l << Pipe2.d;
-                PutValue(WORKING_REG_A.x,res3.b.l);
-                break;
-              case WORD_SIZE:
-                res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                res3.x = res1.x << Pipe2.d;
-                PutShortValue(WORKING_REG_A.x,res3.x);
-                break;
-              case DWORD_SIZE:
-                res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.x.l);
-                res3.d = res1.d << Pipe2.d;
-                PutIntValue(WORKING_REG_A.x,res3.d);
-                break;
-              }
-            break;
-          case ADDRIDXADD:   // (D8,An,Xn)
-            switch(OPERAND_SIZE) {
-              case BYTE_SIZE:
-                if(!DISPLACEMENT_SIZE) {
-                  res1.b.l = GetValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  res3.b.l = res1.b.l << Pipe2.d;
-                  PutValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.b.l);
-                  }
-                else {
-                  res1.b.l = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l);
-                  res3.b.l = res1.b.l << Pipe2.d;
-                  PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.b.l);
-                  }
-                break;
-              case WORD_SIZE:
-                if(!DISPLACEMENT_SIZE) {
-                  res1.x = GetShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  res3.x = res1.x << Pipe2.d;
-                  PutShortValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.x);
-                  }
-                else {
-                  res1.x = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l)  << Pipe2.d;
-                  res3.x = res1.x << Pipe2.d;
-                  PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.x);
-                  }
-                break;
-              case DWORD_SIZE:
-                if(!DISPLACEMENT_SIZE) {
-                  res1.d = GetIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l);
-                  res3.d = res1.d << Pipe2.d;
-                  PutIntValue(WORKING_REG_A.x + (signed short int)DISPLACEMENT_REG.w.l + (signed char)Pipe2.b.l,res3.d);
-                  }
-                else {
-                  res1.d = GetValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l)  << Pipe2.d;
-                  res3.d = res1.d << Pipe2.d;
-                  PutValue(WORKING_REG_A.x + (signed int)DISPLACEMENT_REG.x + (signed char)Pipe2.b.l,res3.d);
-                  }
-                break;
-              }
-            break;
+        else {
+          if(Pipe1 & 0b0000000000100000) { // i/r
+            res2.b.l=(Pipe1 & 0b0000111000000000) >> 9;
+            if(!res2.b.l)
+              res2.b.l=8;
+            }
+          else {
+            res2.b.l=DEST_REG_D.b.b0 & 63;
+            }
+          switch(OPERAND_SIZE) {
+            case BYTE_SIZE:
+              res1.b.l = WORKING_REG_D.b.b0;
+              switch(Pipe1 & 0b0000000000011000) {
+                case 0b00000:   //ASd
+                  if(Pipe1 & 0b0000000100000000)  // rotate direction
+                    res3.b.l = res1.b.l << res2.b.l;
+                  else
+                    res3.b.l = (signed char)res1.b.l >> res2.b.l;
+                  goto aggFlagRC1;
+                  break;
+                case 0b01000:   //LSd
+                  if(Pipe1 & 0b0000000100000000)  // rotate direction
+                    res3.b.l = res1.b.l << res2.b.l;
+                  else
+                    res3.b.l = res1.b.l >> res2.b.l;
+                  goto aggFlagRC1;
+                  break;
+                case 0b10000:   //ROXd
+                  if(Pipe1 & 0b0000000100000000) {  // rotate direction
+                    res3.b.l = res1.b.l << res2.b.l;
+                    if(_f.CCR.Ext)
+                      res3.b.l |= 1;
+                    }
+                  else {
+                    res3.b.l = res1.b.l >> res2.b.l;
+                    if(_f.CCR.Ext)
+                      res3.b.l |= 0x80;
+                    }
+                  if(res2.b.l) {
+                    if(Pipe1 & 0b0000000100000000)  // 
+                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x80 ? 1 : 0;
+                    else
+                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x01;
+                    }
+                  else {
+                    _f.CCR.Carry=_f.CCR.Ext;
+                    }
+                  break;
+                case 0b11000:   //ROd
+                  if(Pipe1 & 0b0000000100000000) { // rotate direction
+                    res3.b.l = res1.b.l << res2.b.l;
+                    if(_f.CCR.Carry)
+                      res3.b.l |= 1;
+                    }
+                  else {
+                    res3.b.l = res1.b.l >> res2.b.l;
+                    if(_f.CCR.Carry)
+                      res3.b.l |= 0x80;
+                    }
+                  
+aggFlagRC1:
+                  if(res2.b.l) {
+                    if(Pipe1 & 0b0000000100000000)
+                      _f.CCR.Carry=res1.b.l & 0x80 ? 1 : 0;
+                    else
+                      _f.CCR.Carry=res1.b.l & 0x0001;
+                    }
+                  else
+                    _f.CCR.Carry=0;
+                  break;
+                }
+              WORKING_REG_D.b.b0 = res3.b.l;
+              break;
+            case WORD_SIZE:
+              res1.x=WORKING_REG_D.w.l;
+              switch(Pipe1 & 0b0000000000011000) {
+                case 0b00000:   //ASd
+                  if(Pipe1 & 0b0000000100000000)  // rotate direction
+                    res3.x = res1.x << res2.b.l;
+                  else
+                    res3.x = (signed short int)res1.x >> res2.b.l;
+                  goto aggFlagRC2;
+                  break;
+                case 0b00001:   //LSd
+                  if(Pipe1 & 0b0000000100000000)  // rotate direction
+                    res3.x = res1.x << res2.b.l;
+                  else
+                    res3.x = res1.x >> res2.b.l;
+                  goto aggFlagRC2;
+                  break;
+                case 0b00010:   //ROXd
+                  if(Pipe1 & 0b0000000100000000) {  // rotate direction
+                    res3.x = res1.x << res2.b.l;
+                    if(_f.CCR.Ext)
+                      res3.x |= 1;
+                    }
+                  else {
+                    res3.x = res1.x >> res2.b.l;
+                    if(_f.CCR.Ext)
+                      res3.x |= 0x8000;
+                    }
+                  if(res2.b.l) {
+                    if(Pipe1 & 0b0000000100000000)  // 
+                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x8000 ? 1 : 0;
+                    else
+                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x0001;
+                    }
+                  else {
+                    _f.CCR.Carry=_f.CCR.Ext;
+                    }
+                  break;
+                case 0b00011:   //ROd
+                  if(Pipe1 & 0b0000000100000000) { // rotate direction
+                    res3.x = res1.x << res2.b.l;
+                    if(_f.CCR.Carry)
+                      res3.x |= 1;
+                    }
+                  else {
+                    res3.x = res1.b.l >> res2.b.l;
+                    if(_f.CCR.Carry)
+                      res3.x |= 0x8000;
+                    }
+                  
+aggFlagRC2:
+                  if(res2.b.l) {
+                    if(Pipe1 & 0b0000000100000000)  // 
+                      _f.CCR.Carry=res1.x & 0x8000 ? 1 : 0;
+                    else
+                      _f.CCR.Carry=res1.x & 0x0001;
+                    }
+                  else
+                    _f.CCR.Carry=0;
+                  break;
+                }
+              WORKING_REG_D.w.l = res3.x;
+              break;
+            case DWORD_SIZE:
+              res1.d=WORKING_REG_D.x;
+              if(Pipe1 & 0b0000000100000000)  // rotate direction
+                _f.CCR.Carry=res1.b.l & 0x80000000 ? 1 : 0;
+              else
+                _f.CCR.Carry=res1.b.l & 0x00000001;
+              switch(Pipe1 & 0b0000000000011000) {
+                case 0b00000:   //ASd
+                  if(Pipe1 & 0b0000000100000000)  // rotate direction
+                    res3.d = res1.d << res2.b.l;
+                  else
+                    res3.d = (signed int)res1.d >> res2.b.l;
+                  goto aggFlagRC4;
+                  break;
+                case 0b00001:   //LSd
+                  if(Pipe1 & 0b0000000100000000)  // rotate direction
+                    res3.d = res1.d << res2.b.l;
+                  else
+                    res3.d = res1.d >> res2.b.l;
+                  goto aggFlagRC4;
+                  break;
+                case 0b00010:   //ROXd
+                  if(Pipe1 & 0b0000000100000000) {  // rotate direction
+                    res3.d = res1.d << res2.b.l;
+                    if(_f.CCR.Ext)
+                      res3.d |= 1;
+                    }
+                  else {
+                    res3.d = res1.d >> res2.b.l;
+                    if(_f.CCR.Ext)
+                      res3.d |= 0x80000000;
+                    }
+                  if(res2.b.l) {
+                    if(Pipe1 & 0b0000000100000000)  // 
+                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x80000000 ? 1 : 0;
+                    else
+                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x00000001;
+                    }
+                  else {
+                    _f.CCR.Carry=_f.CCR.Ext;
+                    }
+                  break;
+                case 0b00011:   //ROd
+                  if(Pipe1 & 0b0000000100000000) { // rotate direction
+                    res3.d = res1.d << res2.b.l;
+                    if(_f.CCR.Carry)
+                      res3.d |= 1;
+                    }
+                  else {
+                    res3.d = res1.d >> res2.b.l;
+                    if(_f.CCR.Carry)
+                      res3.d |= 0x80000000;
+                    }
+                  
+aggFlagRC4:
+                  if(res2.b.l) {
+                    if(Pipe1 & 0b0000000100000000)  // 
+                      _f.CCR.Carry=res1.x & 0x80000000 ? 1 : 0;
+                    else
+                      _f.CCR.Carry=res1.x & 0x00000001;
+                    }
+                  else
+                    _f.CCR.Carry=0;
+                  break;
+                }
+              WORKING_REG_D.x = res3.d;
+              break;
+            }
           }
+        
 aggFlagR:
         switch(OPERAND_SIZE) {
           case BYTE_SIZE:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
-            _f.CCR.Carry=!!(res3.b.h);
-            _f.CCR.Ext=_f.CCR.Carry;    // FINIRE! non è sempre così
             break;
           case WORD_SIZE:
+aggFlagR2:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x8000);
-            _f.CCR.Carry=!!(HIWORD(res3.d));
-            _f.CCR.Ext=_f.CCR.Carry;    // FINIRE! non è sempre così
             break;
           case DWORD_SIZE:
             _f.CCR.Zero=!res3.d;
             _f.CCR.Sign=!!(res3.d & 0x80000000);
-            _f.CCR.Carry=!!((unsigned long long)res1.d + (unsigned long long)res2.d) & 0x8000000000000000ULL;
-            _f.CCR.Ext=_f.CCR.Carry;    // FINIRE! non è sempre così
             break;
           }
         _f.CCR.Ovf = 0;
                 
 				break;
         
+      default:
+		    res3.b.l=4;
+		    goto doTrap;
+				break;
+
 			}
     
 		} while(!fExit);
