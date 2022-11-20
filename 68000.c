@@ -59,7 +59,7 @@ BYTE ram_seg[RAM_SIZE];
 BYTE rom_seg[ROM_SIZE];			
 BYTE i8255RegR[4],i8255RegW[4];
 BYTE LCDram[256 /*4*40*/],LCDCGDARAM=0,LCDCGram[64],LCDCGptr=0,LCDfunction,LCDdisplay,
-	LCDentry=2 /* I/D */,LCDcursor;			// emulo LCD text come Z80net
+	LCDentry=2 /* I/D */,LCDcursor;			// emulo LCD text 
 signed char LCDptr=0;
 BYTE IOExtPortI[4],IOExtPortO[4];
 BYTE IOPortI,IOPortO,ClIRQPort,ClWDPort;
@@ -6068,7 +6068,7 @@ do_bra:
                     break;
                   }
                 break;
-              case ADDRREGADD:   // An qua SBCD
+              case ADDRREGADD:   // An qua SBCD dovrebbe andare anche su DATAREG v. anche ABCD
                 if(OPERAND_SIZE == 0) {
                   res1.b.l = GetValue(--WORKING_REG_A.x);
                   res2.b.l = GetValue(--DEST_REG_A.x);
@@ -7867,7 +7867,10 @@ do_bra:
           else      // MULU
             res3.d = res1.x * res2.x;
           DEST_REG_D.x = res3.d;
-          goto aggFlag;
+          _f.CCR.Zero=!res3.d;
+          _f.CCR.Sign=!!(res3.d & 0x80000000);
+          _f.CCR.Ovf=0;     // ?? appunto, se long*long
+          _f.CCR.Carry=0;
           }
         else {  // AND ABCD EXG
           if(Pipe1 & 0b0000000100000000) { // direction... 
@@ -7950,14 +7953,31 @@ do_bra:
                     break;
                   }
                 break;
-              case ADDRREGADD:   // An qua ABCD
-                if(OPERAND_SIZE == 0) {
-                  res1.b.l = GetValue(--WORKING_REG_A.x);
-                  res2.b.l = GetValue(--DEST_REG_A.x);
-                  res3.x = (res1.b.l & 0xf) + (res2.b.l & 0xf) + _f.CCR.Ext;
-                  res3.x = (((res1.b.l & 0xf0) >> 4) + ((res2.b.l & 0xf0) >> 4) + (res3.b.h ? 1 : 0)) | 
-                            res3.b.l;
-                  PutValue(DEST_REG_A.x, res3.b.l);
+              case ADDRREGADD:   // An qua ABCD EXG
+                switch(OPERAND_SIZE) {
+                  case 0:     // ABCD v. anche SBCD DOVREBBE ANDARE ANCHE su DATAREG...
+                    res1.b.l = GetValue(--WORKING_REG_A.x);
+                    res2.b.l = GetValue(--DEST_REG_A.x);
+                    res3.x = (res1.b.l & 0xf) + (res2.b.l & 0xf) + _f.CCR.Ext;
+                    res3.x = (((res1.b.l & 0xf0) >> 4) + ((res2.b.l & 0xf0) >> 4) + (res3.b.h ? 1 : 0)) | 
+                              res3.b.l;
+                    PutValue(DEST_REG_A.x, res3.b.l);
+                    _f.CCR.Zero=!res3.b.l;
+                    _f.CCR.Ext=_f.CCR.Carry=!!res3.b.h;
+                    goto noAggFlag;
+                    break;
+                  case 0x40:     //  EXG
+                    res3.x=WORKING_REG_A.x;
+                    WORKING_REG_A.x=DEST_REG_A.x;
+                    DEST_REG_A.x=res3.x;
+                    goto noAggFlag;
+                    break;
+                  case 0x80:     //  EXG
+                    res3.x=WORKING_REG_A.x;
+                    WORKING_REG_A.x=DEST_REG_D.x;
+                    DEST_REG_D.x=res3.x;
+                    goto noAggFlag;
+                    break;
                   }
                 break;
               case ADDRADD:   // (An)
