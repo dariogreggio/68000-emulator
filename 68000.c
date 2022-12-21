@@ -821,7 +821,7 @@ void PutIntValue(DWORD t,DWORD t1) {
   if(t & 1) {
     DoAddressExcep=1;
     }
-	if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {		// ZX80,81
+	if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {		// 
 		t-=RAM_START;
 	  ram_seg[t++]=HIBYTE(HIWORD(t1));
 	  ram_seg[t++]=LOBYTE(HIWORD(t1));
@@ -856,8 +856,8 @@ void PutIntValue(DWORD t,DWORD t1) {
       }\
     }
 #define MOVEM_R2M_PREDEC()  if(!LOBYTE(Pipe1) & 0x40) {\
-    BYTE i; WORD j;\
-    for(i=0,j=0x8000; i<16; i++,j>>=1) {\
+    signed char i; WORD j;\
+    for(i=15,j=0x1; i>=0; i--,j<<=1) {\
       if(res2.w & j) {\
         res3.x-=2;\
         PutShortValue(res3.x, ALL_REGS.r[i].w.l);\
@@ -865,8 +865,8 @@ void PutIntValue(DWORD t,DWORD t1) {
       }\
     }\
   else {\
-    BYTE i; WORD j;\
-    for(i=0,j=0x8000; i<16; i++,j>>=1) {\
+    signed char i; WORD j;\
+    for(i=15,j=0x1; i>=0; i--,j<<=1) {\
       if(res2.w & j) {\
         res3.x-=4;\
         PutIntValue(res3.x, ALL_REGS.r[i].x);\
@@ -912,7 +912,7 @@ int Emulate(int mode) {
 		BYTE  b[32];
 	  union REG r[8];
 		} regsD;
-	union __attribute__((__packed__)) A_REGISTERS {   // questi SEGUONO i D (v. DISPLACEMENT_REG2 e anche MOVEM)
+	union __attribute__((__packed__)) A_REGISTERS {   // questi SEGUONO i D (v. DISPLACEMENT_REG e anche MOVEM)
 		BYTE  b[32];
 	  union REG r[8];
 		} regsA;
@@ -952,7 +952,7 @@ enum ADDRESSING_MODES {
 #define	SIZE_ELSE 0xC0
 #define DISPLACEMENT_REG (ALL_REGS.r[((Pipe2.b.h >> 4) & 15)])   // sia D che A (v.sopra)
 #define DISPLACEMENT_SIZE (Pipe2.b.h & 0b00001000)
-#define DISPLACEMENT_SCALE (1 << ((Pipe2.b.h & 0b00000110) >> 1))
+#define DISPLACEMENT_SCALE ((Pipe2.b.h & 0b00000110) >> 1)
 #define ABSOLUTEADD_SIZE (Pipe1 & 0b0000000000000111)
 #define ABSOLUTEADD_SIZE2 ((Pipe1 & 0b0000111000000000) >> 9)    // per MOVE/MOVEA
 #define	BYTE_SIZE2 0x10     // coglioni ;)
@@ -1375,7 +1375,7 @@ aggSR:
               case WORD_SIZE:
                 res3.w = Pipe2.w;
                 _pc+=AdvPipe(_pc,2);
-                res3.w |= GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+                res3.w |= GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.w);
                 break;
               case DWORD_SIZE:
@@ -1393,42 +1393,42 @@ aggSR:
                 if(!DISPLACEMENT_SIZE) {
                   res3.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res3.b.l |= GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  res3.b.l |= GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 else {
                   res3.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res3.b.l |= GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  res3.b.l |= GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res3.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res3.w |= GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  res3.w |= GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 else {
                   res3.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res3.w |= GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  res3.w |= GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res3.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res3.x |= GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  res3.x |= GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 else {
                   res3.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res3.x |= GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  res3.x |= GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 break;
               }
@@ -1472,21 +1472,29 @@ noAggFlag:
 			case 0x0b:
 			case 0x0d:
 			case 0x0f:
-        if(ADDRESSING == ADDRREGADD) {      // MOVEP VERIFICARE ORDINE BYTE (v.pdf)
+        if(ADDRESSING == ADDRREGADD) {      // MOVEP 
           if(LOBYTE(Pipe1) & 0b10000000) {    // Dx -> Mem
             if(LOBYTE(Pipe1) & 0b01000000) {    // 32bit
-              DEST_REG_D.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+              PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w,DEST_REG_D.b.b3);
+              PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w+2,DEST_REG_D.b.b2);
+              PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w+4,DEST_REG_D.b.b1);
+              PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w+6,DEST_REG_D.b.b0);
               }
             else {                            // 16bit
-              DEST_REG_D.w.l = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+              PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w,DEST_REG_D.b.b1);
+              PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w+2,DEST_REG_D.b.b0);
               }
             }
           else {                              // Mem -> Dx
             if(LOBYTE(Pipe1) & 0b01000000) {    // 32bit
-              PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w,DEST_REG_D.x);
+              DEST_REG_D.b.b3 = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+              DEST_REG_D.b.b2 = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w+2);
+              DEST_REG_D.b.b1 = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w+4);
+              DEST_REG_D.b.b0 = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w+6);
               }
             else {                            // 16bit
-              PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w,DEST_REG_D.w.l);
+              DEST_REG_D.b.b1 = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+              DEST_REG_D.b.b0 = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w+2);
               }
             }
           _pc+=2;
@@ -1513,9 +1521,9 @@ doBit:
                   break;
                 case PCDISPSUBADD:   // (D8,Xn,PC) SOLO BTST!!
                   if(!DISPLACEMENT_SIZE)
-                    res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                    res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   else
-                    res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                    res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   _pc+=2;
                   break;
                 case IMMSUBADD:
@@ -1545,10 +1553,10 @@ doBit:
               break;
             case ADDRIDXADD:   // (D8,An,Xn)
               if(!DISPLACEMENT_SIZE) {
-                res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 }
               else {
-                res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 }
               _pc+=2;
               break;
@@ -1646,10 +1654,10 @@ doBit:
               break;
             case ADDRIDXADD:   // (D8,An,Xn)
               if(!DISPLACEMENT_SIZE) {
-                PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                 }
               else {
-                PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                 }
               break;
             }
@@ -1825,7 +1833,7 @@ doBit2:   ;
               case WORD_SIZE:
                 res3.w = Pipe2.w;
                 _pc+=AdvPipe(_pc,2);
-                res3.w &= GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+                res3.w &= GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.w);
                 break;
               case DWORD_SIZE:
@@ -1843,42 +1851,42 @@ doBit2:   ;
                 if(!DISPLACEMENT_SIZE) {
                   res3.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res3.b.l &= GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  res3.b.l &= GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 else {
                   res3.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res3.b.l &= GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  res3.b.l &= GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res3.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res3.w &= GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  res3.w &= GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 else {
                   res3.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res3.w &= GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  res3.w &= GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res3.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res3.x &= GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  res3.x &= GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 else {
                   res3.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res3.x &= GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  res3.x &= GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 break;
               }
@@ -2070,7 +2078,7 @@ doBit2:   ;
               case WORD_SIZE:
                 res2.w = Pipe2.w;
                 _pc+=AdvPipe(_pc,2);
-                res1.w = GetValue(WORKING_REG_A.x - (signed short int)Pipe2.w);
+                res1.w = GetShortValue(WORKING_REG_A.x - (signed short int)Pipe2.w);
                 res3.x = (DWORD)res1.w - (DWORD)res2.w;
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.w);
                 break;
@@ -2090,48 +2098,48 @@ doBit2:   ;
                 if(!DISPLACEMENT_SIZE) {
                   res2.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res1.b.l = GetValue(WORKING_REG_A.x - (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.b.l = GetValue(WORKING_REG_A.x - (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.w = (WORD)res1.b.l - (WORD)res2.b.l;
-                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 else {
                   res2.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res1.b.l = GetValue(WORKING_REG_A.x - (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.b.l = GetValue(WORKING_REG_A.x - (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.w = (WORD)res1.b.l - (WORD)res2.b.l;
-                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res2.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res1.w = GetShortValue(WORKING_REG_A.x - (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.w = GetShortValue(WORKING_REG_A.x - (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.x = (DWORD)res1.w - (DWORD)res2.w;
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 else {
                   res2.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res1.w = GetShortValue(WORKING_REG_A.x - (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.w = GetShortValue(WORKING_REG_A.x - (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.x = (DWORD)res1.w - (DWORD)res2.w;
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res2.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res1.x = GetIntValue(WORKING_REG_A.x - (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.x = GetIntValue(WORKING_REG_A.x - (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   res3.x = res1.x - res2.x;
-	                PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+	                PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 else {
                   res2.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res1.x = GetIntValue(WORKING_REG_A.x - (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.x = GetIntValue(WORKING_REG_A.x - (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.x = res1.x - res2.x;
-                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 break;
               }
@@ -2157,7 +2165,7 @@ aggFlagS:
 aggFlagS4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
-            _f.CCR.Carry=!!(((unsigned long long)res1.x - (unsigned long long)res2.x) & 0x8000000000000000ULL);
+            _f.CCR.Carry=!!(((unsigned long long)res1.x - (unsigned long long)res2.x) >> 32);
             _f.CCR.Ovf = !!((((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
                     !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000));
             // credo sia meglio di usare QWORD longlong...
@@ -2348,7 +2356,7 @@ aggFlagS4:
               case WORD_SIZE:
                 res2.w = Pipe2.w;
                 _pc+=AdvPipe(_pc,2);
-                res1.w = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+                res1.w = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 res3.x = (DWORD)res1.w + (DWORD)res2.w;
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.w);
                 break;
@@ -2368,48 +2376,48 @@ aggFlagS4:
                 if(!DISPLACEMENT_SIZE) {
                   res2.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.w = (WORD)res1.b.l + (WORD)res2.b.l;;
-                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 else {
                   res2.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.w = (WORD)res1.b.l + (WORD)res2.b.l;;
-                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res2.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.x = (DWORD)res1.w + (DWORD)res2.w;
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 else {
                   res2.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.x = (DWORD)res1.w + (DWORD)res2.w;
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res2.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   res3.x = res1.x + res2.x;
-	                PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+	                PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 else {
                   res2.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 	                res3.x = res1.x + res2.x;
-                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 break;
               }
@@ -2435,7 +2443,7 @@ aggFlagA:
 aggFlagA4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
-            _f.CCR.Carry=!!(((unsigned long long)res1.x + (unsigned long long)res2.x) & 0x8000000000000000ULL);
+            _f.CCR.Carry=!!(((unsigned long long)res1.x + (unsigned long long)res2.x) >> 32);
             _f.CCR.Ovf = !!((((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
                     !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000));
             // credo sia meglio di usare QWORD longlong...
@@ -2611,7 +2619,7 @@ aggFlagA4:
               case WORD_SIZE:
                 res3.w = Pipe2.w;
                 _pc+=AdvPipe(_pc,2);
-                res3.w ^= GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+                res3.w ^= GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.w);
                 break;
               case DWORD_SIZE:
@@ -2629,42 +2637,42 @@ aggFlagA4:
                 if(!DISPLACEMENT_SIZE) {
                   res3.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res3.b.l ^= GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  res3.b.l ^= GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 else {
                   res3.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-                  res3.b.l ^= GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  res3.b.l ^= GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res3.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res3.w ^= GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  res3.w ^= GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 else {
                   res3.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-                  res3.w ^= GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  res3.w ^= GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
                   res3.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res3.x ^= GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  res3.x ^= GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 else {
                   res3.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-                  res3.x ^= GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  res3.x ^= GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 break;
               }
@@ -2834,36 +2842,36 @@ aggFlagA4:
                 if(!DISPLACEMENT_SIZE) {
 									res2.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-									res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+									res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 									}
                 else {
 									res2.b.l = Pipe2.b.l;
                   _pc+=AdvPipe(_pc,2);
-									res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+									res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
 									res2.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-									res1.w = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+									res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 									}
                 else {
 									res2.w = Pipe2.w;
                   _pc+=AdvPipe(_pc,2);
-									res1.w = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+									res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
 									res2.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-									res1.x = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+									res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 									}
                 else {
 									res2.x = Pipe2.d;
                   _pc+=AdvPipe(_pc,4);
-									res1.x = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+									res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 break;
               }
@@ -2900,7 +2908,7 @@ aggFlagC:
 aggFlagC4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
-            _f.CCR.Carry=!!(((unsigned long long)res1.x - (unsigned long long)res2.x) & 0x8000000000000000ULL);
+            _f.CCR.Carry=!!(((unsigned long long)res1.x - (unsigned long long)res2.x) >> 32);
             _f.CCR.Ovf = !!((((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
                     !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000));
             // credo sia meglio di usare QWORD longlong...
@@ -2942,9 +2950,9 @@ aggFlagC4:
                 break;
               case PCDISPSUBADD:   // (D8,Xn,PC)
                 if(!DISPLACEMENT_SIZE)
-                  res3.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 else
-                  res3.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 _pc+=AdvPipe(_pc,2);
                 break;
               case IMMSUBADD:
@@ -2975,10 +2983,10 @@ aggFlagC4:
             break;
           case ADDRIDXADD:   // (D8,An,Xn)
             if(!DISPLACEMENT_SIZE) {
-              res3.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+              res3.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
               }
             else {
-              res3.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+              res3.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
               }
             _pc+=AdvPipe(_pc,2);
             break;
@@ -3065,9 +3073,9 @@ aggFlagC4:
 	              break;
               case PCDISPSUBADD:   // (D8,Xn,PC)
                 if(!DISPLACEMENT_SIZE)
-                  res3.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 else
-                  res3.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 _pc+=AdvPipe(_pc,2);
                 break;
               case IMMSUBADD:
@@ -3098,12 +3106,12 @@ aggFlagC4:
             _pc+=AdvPipe(_pc,2);
             break;
           case ADDRIDXADD:   // (D8,An,Xn)
-            if(!DISPLACEMENT_SIZE) {
-              res3.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-              }
-            else {
-              res3.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-              }
+            if(!DISPLACEMENT_SIZE)
+              res3.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+              
+            else 
+              res3.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+              
             _pc+=AdvPipe(_pc,2);
             break;
           }
@@ -3190,9 +3198,9 @@ aggFlagC4:
                 break;
               case PCDISPSUBADD:   // (D8,Xn,PC)
                 if(!DISPLACEMENT_SIZE)
-                  res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 else
-                  res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 _pc+=AdvPipe(_pc,2);
                 break;
               case IMMSUBADD:
@@ -3219,15 +3227,15 @@ aggFlagC4:
             res3.w = GetShortValue(WORKING_REG_A.x);
             break;
           case ADDRDISPADD:   // (D16,An)
-            res3.w = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+            res3.w = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
             _pc+=AdvPipe(_pc,2);
             break;
           case ADDRIDXADD:   // (D8,An,Xn)
             if(!DISPLACEMENT_SIZE) {
-              res3.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+              res3.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
               }
             else {
-              res3.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+              res3.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
               }
             _pc+=AdvPipe(_pc,2);
             break;
@@ -3498,51 +3506,51 @@ aggFlagC4:
               case BYTE_SIZE:
                 if(!DISPLACEMENT_SIZE) {
 									res1.b.l = 0;
-									res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
+									res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
 									res3.w = (WORD)res1.b.l - (WORD)res2.b.l;
-									PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+									PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
 									}
                 else {
 									res1.b.l = 0;
-									res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
+									res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
 									res3.w = (WORD)res1.b.l - (WORD)res2.b.l;
-									PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+									PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
 								_pc+=2;
                 break;
               case WORD_SIZE:
                 res1.w = 0;
                 if(!DISPLACEMENT_SIZE) {
-                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
+                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
                   res3.x = (DWORD)res1.w - (DWORD)res2.w;
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
 									}
                 else {
-                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
+                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
                   res3.x = (DWORD)res1.w - (DWORD)res2.w;
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
 									}
 								_pc+=2;
                 break;
               case DWORD_SIZE:
                 res1.x = 0;
                 if(!DISPLACEMENT_SIZE) {
-                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
+                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
                   res3.x = res1.x - res2.x;
-                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
 									}
                 else {
-                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
+                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) + _f.CCR.Ext;
                   res3.x = res1.x - res2.x;
-                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
 									}
 								_pc+=2;
                 break;
 		          case SIZE_ELSE:
                 if(!DISPLACEMENT_SIZE)
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, _f.SR.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, _f.SR.w);
                 else
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, _f.SR.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, _f.SR.w);
 								goto noAggFlag;
 			          break;
               }
@@ -3667,26 +3675,26 @@ aggFlagC4:
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
+                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
 		              }
                 else {
-                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
+                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
                   }
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
                   }
                 else {
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
                   }
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
+                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
                   }
                 else {
-                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
+                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, 0);
                   }
                 break;
               }
@@ -3711,7 +3719,7 @@ aggFlagC4:
 						case ABSOLUTEADD:
 							switch(ABSOLUTEADD_SIZE) {
 								case ABSSSUBADD:
-									res3.x = (signed short int)Pipe2.w;
+									res3.x = Pipe2.w;
 									_pc+=2;
 									break;
 								case ABSLSUBADD:
@@ -3724,9 +3732,9 @@ aggFlagC4:
 									break;
 								case PCDISPSUBADD:   // (D8,Xn,PC)
                   if(!DISPLACEMENT_SIZE)
-    								res3.x = _pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+    								res3.x = _pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                   else
-    								res3.x = _pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+    								res3.x = _pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
 									_pc+=2;
 									break;
 								case IMMSUBADD:		// qua no!
@@ -3748,10 +3756,10 @@ aggFlagC4:
 							break;
 						case ADDRIDXADD:   // (D8,An,Xn)
 							if(!DISPLACEMENT_SIZE) {
-								res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+								res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
 								}
 							else {
-								res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+								res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
 								}
 							_pc+=2;
 							break;
@@ -3759,12 +3767,12 @@ aggFlagC4:
 					DEST_REG_A.x = res3.x;
           }
         else {    // CHK
-          if(Pipe1 & 0b0000000010000000) {    // SIZE (non è sicuro, dai doc...)
+          if(Pipe1 & 0b0000000010000000) {    // SIZE 
 						switch(ADDRESSING) {
 							case ABSOLUTEADD:
 								switch(ABSOLUTEADD_SIZE) {
 									case ABSSSUBADD:
-										res3.x = GetIntValue((signed short int)Pipe2.w);
+										res3.x = GetIntValue(Pipe2.w);
 										_pc+=2;
 										break;
 									case ABSLSUBADD:
@@ -3777,9 +3785,9 @@ aggFlagC4:
 										break;
 									case PCDISPSUBADD:   // (D8,Xn,PC)
                     if(!DISPLACEMENT_SIZE)
-    									res3.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+    									res3.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-      								res3.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+      								res3.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 										_pc+=2;
 										break;
 									case IMMSUBADD:
@@ -3810,10 +3818,10 @@ aggFlagC4:
 								break;
 							case ADDRIDXADD:   // (D8,An,Xn)
 								if(!DISPLACEMENT_SIZE) {
-									res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+									res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
 									}
 								else {
-									res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+									res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
 									}
 								_pc+=2;
 								break;
@@ -3827,7 +3835,7 @@ aggFlagC4:
 							case ABSOLUTEADD:
 								switch(ABSOLUTEADD_SIZE) {
 									case ABSSSUBADD:
-										res3.w = GetShortValue((signed short int)Pipe2.w);
+										res3.w = GetShortValue(Pipe2.w);
 										_pc+=2;
 										break;
 									case ABSLSUBADD:
@@ -3840,9 +3848,9 @@ aggFlagC4:
 										break;
 									case PCDISPSUBADD:   // (D8,Xn,PC)
                     if(!DISPLACEMENT_SIZE)
-  										res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+  										res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-    									res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+    									res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 										_pc+=2;
 										break;
 									case IMMSUBADD:
@@ -3868,10 +3876,10 @@ aggFlagC4:
 								break;
 							case ADDRIDXADD:   // (D8,An,Xn)
 								if(!DISPLACEMENT_SIZE) {
-									res3.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+									res3.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 									}
 								else {
-									res3.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+									res3.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 									}
 								_pc+=2;
 								break;
@@ -3916,7 +3924,7 @@ trap_chk_6:
                     _pc+=2;
                     break;
                   case SIZE_ELSE:
-                    _f.CCR.b =  LOBYTE(GetShortValue(Pipe2.w));
+                    _f.CCR.b =  GetValue(Pipe2.w);
                     goto noAggFlag;
                     break;
                   }
@@ -3945,7 +3953,7 @@ trap_chk_6:
                     _pc+=4;
                     break;
                   case SIZE_ELSE:
-                    _f.CCR.b =  LOBYTE(GetShortValue(Pipe2.w));
+                    _f.CCR.b =  GetValue(Pipe2.w);
                     goto noAggFlag;
                     break;
                   }
@@ -3953,7 +3961,7 @@ trap_chk_6:
               case PCIDXSUBADD:
                 switch(OPERAND_SIZE) {
                   case SIZE_ELSE:
-                    _f.CCR.b =  LOBYTE(GetShortValue(_pc+(signed short int)Pipe2.w));
+                    _f.CCR.b =  GetValue(_pc+(signed short int)Pipe2.w);
 										_pc+=2;
                     goto noAggFlag;
                     break;
@@ -3963,9 +3971,9 @@ trap_chk_6:
                 switch(OPERAND_SIZE) {
                   case SIZE_ELSE:
                     if(!DISPLACEMENT_SIZE)
-                      _f.CCR.b =  LOBYTE(GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l));
+                      _f.CCR.b =  GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      _f.CCR.b =  LOBYTE(GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l));
+                      _f.CCR.b =  GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 										_pc+=2;
                     goto noAggFlag;
                     break;
@@ -4003,7 +4011,7 @@ trap_chk_6:
                 WORKING_REG_D.x = res3.x;
                 break;
 		          case SIZE_ELSE:
-                _f.CCR.b =  LOBYTE(WORKING_REG_D.w.l);
+                _f.CCR.b = WORKING_REG_D.b.b0;
 								goto noAggFlag;
 			          break;
               }
@@ -4031,7 +4039,7 @@ trap_chk_6:
                 PutIntValue(WORKING_REG_A.x, res3.x);
                 break;
 		          case SIZE_ELSE:
-                _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x));
+                _f.CCR.b = GetValue(WORKING_REG_A.x);
 								goto noAggFlag;
 			          break;
               }
@@ -4060,7 +4068,7 @@ trap_chk_6:
                 WORKING_REG_A.x+=4;
                 break;
 		          case SIZE_ELSE:
-                _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x));
+                _f.CCR.b = GetValue(WORKING_REG_A.x);
 								goto noAggFlag;
 			          break;
               }
@@ -4089,7 +4097,7 @@ trap_chk_6:
                 PutIntValue(WORKING_REG_A.x, res3.x);
                 break;
 		          case SIZE_ELSE:
-                _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x));
+                _f.CCR.b = GetValue(WORKING_REG_A.x);
 								goto noAggFlag;
 			          break;
               }
@@ -4118,7 +4126,7 @@ trap_chk_6:
 								_pc+=2;
                 break;
 		          case SIZE_ELSE:
-                _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w));
+                _f.CCR.b = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
 								goto noAggFlag;
 			          break;
               }
@@ -4128,51 +4136,51 @@ trap_chk_6:
               case BYTE_SIZE:
                 res1.b.l = 0;
                 if(!DISPLACEMENT_SIZE) {
-                  res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   res3.w = (WORD)res1.b.l - (WORD)res2.b.l;
-                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 else {
-                  res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   res3.w = (WORD)res1.b.l - (WORD)res2.b.l;
-                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
 								_pc+=2;
                 break;
               case WORD_SIZE:
                 res1.w = 0;
                 if(!DISPLACEMENT_SIZE) {
-                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   res3.x = (DWORD)res1.w - (DWORD)res2.w;
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 else {
-                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   res3.x = (DWORD)res1.w - (DWORD)res2.w;
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
 								_pc+=2;
                 break;
               case DWORD_SIZE:
                 res1.x = 0;
                 if(!DISPLACEMENT_SIZE) {
-                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   res3.x = res1.x - res2.x;
-                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 else {
-                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   res3.x = res1.x - res2.x;
-                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
 								_pc+=2;
                 break;
 		          case SIZE_ELSE:
                 if(!DISPLACEMENT_SIZE) {
-                  _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l));
+                  _f.CCR.b = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 else {
-	                _f.CCR.b = LOBYTE(GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l));
+	                _f.CCR.b = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
 								goto noAggFlag;
 			          break;
@@ -4261,9 +4269,9 @@ trap_chk_6:
           					_pc+=2;
                     if(_f.SR.Supervisor) {
                       if(!DISPLACEMENT_SIZE)
-                        res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                        res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       else
-                        res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                        res3.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       goto aggSR;
                       }
                     else {
@@ -4412,7 +4420,7 @@ trap_chk_6:
                 PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.b.l);
                 break;
               case WORD_SIZE:
-                res3.w = ~GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+                res3.w = ~GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                 PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.w);
                 break;
               case DWORD_SIZE:
@@ -4436,38 +4444,38 @@ trap_chk_6:
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  res3.b.l = ~GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  res3.b.l = ~GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 else {
-                  res3.b.l = ~GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                  res3.b.l = ~GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   }
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  res3.w = ~GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  res3.w = ~GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 else {
-                  res3.w = ~GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                  res3.w = ~GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                   }
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  res3.x = ~GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  res3.x = ~GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 else {
-                  res3.x = ~GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                  res3.x = ~GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                   }
                 break;
 		          case SIZE_ELSE:
                 if(!DISPLACEMENT_SIZE) {
                   if(_f.SR.Supervisor) {
-                    res3.w =GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                    res3.w =GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 										goto aggSR;
                     }
                   else {
@@ -4477,7 +4485,7 @@ trap_chk_6:
                   }
                 else {
                   if(_f.SR.Supervisor) {
-  	                res3.w =GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+  	                res3.w =GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
 										goto aggSR;
                     }
                   else {
@@ -4522,7 +4530,7 @@ trap_chk_6:
               case ABSOLUTEADD:
                 switch(ABSOLUTEADD_SIZE) {
                   case ABSSSUBADD:
-                    res3.x = (signed short int)Pipe2.w;
+                    res3.x = Pipe2.w;
                     _pc+=2;
                     break;
                   case ABSLSUBADD:
@@ -4535,9 +4543,9 @@ trap_chk_6:
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     if(!DISPLACEMENT_SIZE)
-                      res3.x = _pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                      res3.x = _pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                     else
-                      res3.x = _pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                      res3.x = _pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                     _pc+=2;
                     break;
                   case IMMSUBADD:				// qua no!
@@ -4559,10 +4567,10 @@ trap_chk_6:
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 if(!DISPLACEMENT_SIZE) {
-                  res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                  res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                   }
                 else {
-                  res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                  res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                   }
                 _pc+=2;
                 break;
@@ -4595,9 +4603,9 @@ trap_chk_6:
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     // NON dovrebbe esserci!
                     if(!DISPLACEMENT_SIZE)
-                      res3.x = _pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                      res3.x = _pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                     else
-                      res3.x = _pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                      res3.x = _pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                     MOVEM_R2M()
                     _pc+=2;
                     break;
@@ -4617,7 +4625,7 @@ trap_chk_6:
               case ADDRPDECADD:   // -(An)
                 res3.x = WORKING_REG_A.x;
                 MOVEM_R2M_PREDEC()
-                WORKING_REG_A.x = res3.x;   // non è sicurissimo ma qua dovrebbe essere così... e 68020 è poi diverso
+                WORKING_REG_A.x = res3.x;   //
                 break;
               case ADDRDISPADD:   // (D16,An)
                 res3.x = WORKING_REG_A.x + (signed short int)Pipe2.w;
@@ -4626,10 +4634,10 @@ trap_chk_6:
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 if(!DISPLACEMENT_SIZE) {
-                  res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                  res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                   }
                 else {
-                  res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                  res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                   }
                 MOVEM_R2M()
                 _pc+=2;
@@ -4793,40 +4801,40 @@ trap_chk_6:
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  res3.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 else {
-                  res3.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  res3.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 else {
-                  res3.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  res3.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 else {
-                  res3.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 break;
               case SIZE_ELSE:    // TAS
                 if(!DISPLACEMENT_SIZE) {
-                  res3.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 else {
-                  res3.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res3.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 if(!DISPLACEMENT_SIZE) {
-                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l | 0x80);
+                  PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l | 0x80);
                   }
                 else {
-                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l | 0x80);
+                  PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l | 0x80);
                   }
                 break;
               }
@@ -4866,9 +4874,9 @@ trap_chk_6:
                 break;
               case PCDISPSUBADD:   // (D8,Xn,PC)
                 if(!DISPLACEMENT_SIZE)
-                  res3.x = _pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                  res3.x = _pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                 else
-                  res3.x = _pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                  res3.x = _pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                 MOVEM_M2R()
                 _pc+=2;
                 break;
@@ -4886,7 +4894,7 @@ trap_chk_6:
           case ADDRPINCADD:   // (An)+
             res3.x = WORKING_REG_A.x;
             MOVEM_M2R()
-            WORKING_REG_A.x = res3.x;   // si spera...
+            WORKING_REG_A.x = res3.x;   // 
             break;
           case ADDRPDECADD:   // -(An) qua NO!
             break;
@@ -4897,10 +4905,10 @@ trap_chk_6:
             break;
           case ADDRIDXADD:   // (D8,An,Xn)
             if(!DISPLACEMENT_SIZE) {
-              res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+              res3.x = WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
               }
             else {
-              res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+              res3.x = WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
               }
             MOVEM_M2R()
             _pc+=2;
@@ -4969,7 +4977,7 @@ trap_chk_6:
               }
             break;
           case 0x77:   // RTR
-            _f.CCR.b=LOBYTE(GetShortValue(_sp));
+            _f.CCR.b=GetValue(_sp);
             _sp+=2;
             _pc=GetIntValue(_sp);
             _sp+=4;
@@ -5044,6 +5052,14 @@ doTrap:
           case 0x65:
           case 0x66:
           case 0x67:
+						if(_f.SR.Supervisor) {
+							a7U = WORKING_REG_A.x;
+							}
+						else {
+              res3.b.l=8;
+							goto doTrap;
+							}
+            break;
           case 0x68:
           case 0x69:
           case 0x6a:
@@ -5053,12 +5069,7 @@ doTrap:
           case 0x6e:
           case 0x6f:
 						if(_f.SR.Supervisor) {
-	            if(LOBYTE(Pipe1) & 0b1000) {   // direction
-								WORKING_REG_A.x = a7U;
-								}
-							else {
-								a7U = WORKING_REG_A.x;
-								}
+							WORKING_REG_A.x = a7U;
 							}
 						else {
               res3.b.l=8;
@@ -5086,9 +5097,9 @@ doTrap:
                     case PCDISPSUBADD:   // (D8,Xn,PC)
                       PutIntValue(_sp,_pc+2);  // 
                       if(!DISPLACEMENT_SIZE)
-                        _pc = _pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                        _pc = _pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                       else
-                        _pc = _pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                        _pc = _pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                       break;
                     case IMMSUBADD:   // qua no!
                       break;
@@ -5111,9 +5122,9 @@ doTrap:
                 case ADDRIDXADD:   // (D8,An,Xn)
                   PutIntValue(_sp,_pc+2);  // 
                   if(!DISPLACEMENT_SIZE)
-                    _pc=WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                    _pc=WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                   else
-                    _pc=WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                    _pc=WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                   break;
                 }
               }
@@ -5132,9 +5143,9 @@ doTrap:
                       break;
                     case PCDISPSUBADD:   // (D8,Xn,PC)
                       if(!DISPLACEMENT_SIZE)
-                        _pc = _pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                        _pc = _pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                       else
-                        _pc = _pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                        _pc = _pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                       break;
                     case IMMSUBADD:   // qua no!
                       break;
@@ -5154,9 +5165,9 @@ doTrap:
                   break;
                 case ADDRIDXADD:   // (D8,An,Xn)
                   if(!DISPLACEMENT_SIZE)
-                    _pc=WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                    _pc=WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                   else
-                    _pc=WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
+                    _pc=WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l;
                   break;
                 }
               break;
@@ -5174,7 +5185,7 @@ doTrap:
 			case 0x5e:
         switch(OPERAND_SIZE) {
           case SIZE_ELSE:    // Scc DBcc
-            switch(Pipe1 & 0xf) {
+            switch(HIBYTE(Pipe1) & 0xf) {
               case 0x0:
                 res3.b.l=0xff;    // credo...!
                 break;
@@ -5271,12 +5282,10 @@ doDBccScc:
                   _pc+=2;
                   break;
                 case ADDRIDXADD:   // (D8,An,Xn)
-                  if(!DISPLACEMENT_SIZE) {
-                    PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
-                    }
-                  else {
-                    PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
-                    }
+                  if(!DISPLACEMENT_SIZE)
+                    PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                  else
+                    PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                   _pc+=2;
                   break;
                 }
@@ -5302,7 +5311,7 @@ doDBccScc:
                         PutShortValue(Pipe2.w, res3.w);
                         break;
                       case DWORD_SIZE:
-                        res1.w = GetShortValue(Pipe2.w);
+                        res1.x = GetIntValue(Pipe2.w);
                         res3.x = res1.x + (DWORD)res2.b.l;
                         PutIntValue(Pipe2.w, res3.x);
                         break;
@@ -5322,7 +5331,7 @@ doDBccScc:
                         PutShortValue(Pipe2.d, res3.w);
                         break;
                       case DWORD_SIZE:
-                        res1.w = GetIntValue(Pipe2.d);
+                        res1.x = GetIntValue(Pipe2.d);
                         res3.x = res1.x + (DWORD)res2.b.l;
                         PutIntValue(Pipe2.d,res3.x);
                         break;
@@ -5359,10 +5368,8 @@ doDBccScc:
                   case BYTE_SIZE:
                     break;
                   case WORD_SIZE:
-                    res3.x = WORKING_REG_A.x += (DWORD)res2.b.l;		// tutto cmq.. dice..
-                    break;
                   case DWORD_SIZE:
-                    res3.x = WORKING_REG_A.x += (DWORD)res2.b.l;
+                    res3.x = WORKING_REG_A.x += (DWORD)res2.b.l;		// tutto cmq.. dice..
                     break;
                   }
                 goto noAggFlag;
@@ -5453,38 +5460,38 @@ doDBccScc:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE) {
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.w = (WORD)res1.b.l + (WORD)res2.b.l;;
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                       }
                     else {
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.w = (WORD)res1.b.l + (WORD)res2.b.l;;
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                       }
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE) {
-                      res1.w = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.x = (DWORD)res1.w + (DWORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                       }
                     else {
-                      res1.w = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.x = (DWORD)res1.w + (DWORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                       }
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE) {
-                      res1.x = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.x = res1.x + (DWORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                       }
                     else {
-                      res1.x = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.x = res1.x + (DWORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                       }
                     break;
                   }
@@ -5632,10 +5639,8 @@ doDBccScc:
                   case BYTE_SIZE:
                     break;
                   case WORD_SIZE:
-                    res3.x = (WORKING_REG_A.x -= (DWORD)res2.b.l);		// tutto cmq... dice..
-                    break;
                   case DWORD_SIZE:
-                    res3.x = (WORKING_REG_A.x -= (DWORD)res2.b.l);
+                    res3.x = (WORKING_REG_A.x -= (DWORD)res2.b.l);		// tutto cmq... dice..
                     break;
                   }
                 goto noAggFlag;
@@ -5711,9 +5716,9 @@ doDBccScc:
                     PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.b.l);
                     break;
                   case WORD_SIZE:
-                    res1.w = GetValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
+                    res1.w = GetShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                     res3.x = (DWORD)res1.w - (DWORD)res2.b.l;
-                    PutValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.w);
+                    PutShortValue(WORKING_REG_A.x + (signed short int)Pipe2.w, res3.w);
                     break;
                   case DWORD_SIZE:
                     res1.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
@@ -5727,38 +5732,38 @@ doDBccScc:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE) {
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.w = (WORD)res1.b.l - (WORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                       }
                     else {
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.w = (WORD)res1.b.l - (WORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                       }
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE) {
-                      res1.w = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.x = (DWORD)res1.w - (DWORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                       }
                     else {
-                      res1.w = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.x = (DWORD)res1.w - (DWORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                       }
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE) {
-                      res1.x = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.x = res1.x - (DWORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                       }
                     else {
-                      res1.x = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                       res3.x = res1.x - (DWORD)res2.b.l;
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                       }
                     break;
                   }
@@ -5936,9 +5941,9 @@ do_bra:
                   break;
                 case PCDISPSUBADD:   // (D8,Xn,PC)
                   if(!DISPLACEMENT_SIZE)
-                    res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                    res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   else
-                    res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                    res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   _pc+=2;
                   break;
                 case IMMSUBADD:
@@ -5969,10 +5974,10 @@ do_bra:
               break;
             case ADDRIDXADD:   // (D8,An,Xn)
               if(!DISPLACEMENT_SIZE) {
-                res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 }
               else {
-                res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 }
               _pc+=2;
               break;
@@ -6046,28 +6051,27 @@ do_bra:
                     switch(OPERAND_SIZE) {
                       case BYTE_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case WORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case DWORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
                     _pc+=2;
                     break;
                   case IMMSUBADD:   // NON dovrebbe esistere qua perché confluisce in ORI, ma...
                     res1.x = Pipe2.d; 
-                    _pc+=AdvPipe(_pc,4);
                     _pc+=4;
                     break;
                   }
@@ -6158,21 +6162,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
                 _pc+=2;
@@ -6320,21 +6324,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
                 _pc+=2;
@@ -6401,21 +6405,21 @@ do_bra:
                     switch(OPERAND_SIZE) {
                       case BYTE_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          PutValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.b.l);
+                          PutValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.b.l);
                         else
-                          PutValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.b.l);
+                          PutValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.b.l);
                         break;
                       case WORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.w);
+                          PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.w);
                         else
-                          PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.w);
+                          PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.w);
                         break;
                       case DWORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.x);
+                          PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.x);
                         else
-                          PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.x);
+                          PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.x);
                         break;
                       }
                     break;
@@ -6497,21 +6501,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     else
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     else
-                      PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     else
-                      PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     break;
                   }
                 break;
@@ -6585,15 +6589,15 @@ do_bra:
                 case PCDISPSUBADD:   // (D8,Xn,PC)
                   if(!(HIBYTE(Pipe1) & 0b00000001)) {
                     if(!DISPLACEMENT_SIZE)
-                      res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     }
                   else {
                     if(!DISPLACEMENT_SIZE)
-                      res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     }
                   _pc+=2;
                   break;
@@ -6653,15 +6657,15 @@ do_bra:
             case ADDRIDXADD:   // (D8,An,Xn)
               if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
                 if(!DISPLACEMENT_SIZE)
-                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 else
-                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 }
               else {
                 if(!DISPLACEMENT_SIZE)
-                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 else
-                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 }
               _pc+=2;
               break;
@@ -6723,21 +6727,21 @@ do_bra:
                     switch(OPERAND_SIZE) {
                       case BYTE_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case WORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case DWORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
                     _pc+=2;
@@ -6868,21 +6872,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
                 _pc+=2;
@@ -6966,21 +6970,21 @@ do_bra:
                     switch(OPERAND_SIZE) {
                       case BYTE_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res2.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res2.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res2.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res2.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case WORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case DWORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
                     _pc+=2;
@@ -7074,21 +7078,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
                 _pc+=2;
@@ -7156,21 +7160,21 @@ do_bra:
                     switch(OPERAND_SIZE) {
                       case BYTE_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          PutValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                          PutValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                         else
-                          PutValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
+                          PutValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.b.l);
                         break;
                       case WORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                          PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                         else
-                          PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
+                          PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.w);
                         break;
                       case DWORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                          PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                         else
-                          PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
+                          PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                         break;
                       }
                     break;
@@ -7250,21 +7254,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     else
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     else
-                      PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     else
-                      PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     break;
                   }
                 break;
@@ -7314,9 +7318,9 @@ do_bra:
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     if(!DISPLACEMENT_SIZE)
-                      res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     _pc+=2;
                     break;
                   case IMMSUBADD:
@@ -7347,12 +7351,10 @@ do_bra:
                 _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
-                if(!DISPLACEMENT_SIZE) {
-                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  }
-                else {
-                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  }
+                if(!DISPLACEMENT_SIZE)
+                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                else
+                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 _pc+=4;
                 break;
               }
@@ -7377,9 +7379,9 @@ do_bra:
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     if(!DISPLACEMENT_SIZE)
-                      res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     _pc+=2;
                     break;
                   case IMMSUBADD:
@@ -7410,12 +7412,10 @@ do_bra:
                 _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
-                if(!DISPLACEMENT_SIZE) {
-                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  }
-                else {
-                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                  }
+                if(!DISPLACEMENT_SIZE)
+                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                else
+                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 _pc+=2;
                 break;
               }
@@ -7579,32 +7579,32 @@ do_bra:
               switch(OPERAND_SIZE) {
                 case BYTE_SIZE:
                   if(!DISPLACEMENT_SIZE) {
-                    res3.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.b.b0;
-                    PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                    res3.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.b.b0;
+                    PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     }
                   else {
-                    res3.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.b.b0;
-                    PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                    res3.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.b.b0;
+                    PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     }
                   break;
                 case WORD_SIZE:
                   if(!DISPLACEMENT_SIZE) {
-                    res3.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.w.l;
-                    PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                    res3.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.w.l;
+                    PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     }
                   else {
-                    res3.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.w.l;
-                    PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                    res3.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.w.l;
+                    PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     }
                   break;
                 case DWORD_SIZE:
                   if(!DISPLACEMENT_SIZE) {
-                    res3.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.x;
-                    PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                    res3.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.x;
+                    PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     }
                   else {
-                    res3.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.x;
-                    PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                    res3.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.x;
+                    PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     }
                   break;
                 }
@@ -7672,21 +7672,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
                 _pc+=2;
@@ -7812,28 +7812,28 @@ do_bra:
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 else {
-                  res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 _pc+=2;
                 break;
               case WORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 else {
-                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 _pc+=2;
                 break;
               case DWORD_SIZE:
                 if(!DISPLACEMENT_SIZE) {
-                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 else {
-                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   }
                 _pc+=2;
                 break;
@@ -7895,9 +7895,9 @@ do_bra:
                   break;
                 case PCDISPSUBADD:   // (D8,Xn,PC)
                   if(!DISPLACEMENT_SIZE)
-                    res2.w = GetShortValue(_pc+(((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                    res2.w = GetShortValue(_pc+(((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   else
-                    res2.w = GetShortValue(_pc+(((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                    res2.w = GetShortValue(_pc+(((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   _pc+=2;
                   break;
                 case IMMSUBADD:
@@ -7927,12 +7927,10 @@ do_bra:
               _pc+=2;
               break;
             case ADDRIDXADD:   // (D8,An,Xn)
-              if(!DISPLACEMENT_SIZE) {
-                res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                }
-              else {
-                res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
-                }
+              if(!DISPLACEMENT_SIZE)
+                res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+              else
+                res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
               _pc+=2;
               break;
             }
@@ -7997,21 +7995,21 @@ do_bra:
                     switch(OPERAND_SIZE) {
                       case BYTE_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case WORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case DWORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
                     _pc+=2;
@@ -8131,21 +8129,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
                 _pc+=2;
@@ -8293,21 +8291,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
                 _pc+=2;
@@ -8437,21 +8435,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     else
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     else
-                      PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     else
-                      PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     break;
                   }
                 break;
@@ -8526,15 +8524,15 @@ do_bra:
                 case PCDISPSUBADD:   // (D8,Xn,PC)
                   if(!(HIBYTE(Pipe1) & 0b00000001)) { // 
                     if(!DISPLACEMENT_SIZE)
-                      res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     }
                   else {
                     if(!DISPLACEMENT_SIZE)
-                      res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     }
                   _pc+=2;
                   break;
@@ -8594,15 +8592,15 @@ do_bra:
             case ADDRIDXADD:   // (D8,An,Xn)
               if(!(HIBYTE(Pipe1) & 0b00000001)) { // size
                 if(!DISPLACEMENT_SIZE)
-                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 else
-                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 }
               else {
                 if(!DISPLACEMENT_SIZE)
-                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 else
-                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                  res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 }
               _pc+=2;
               break;
@@ -8664,21 +8662,21 @@ do_bra:
                     switch(OPERAND_SIZE) {
                       case BYTE_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.b.l = GetValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case WORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       case DWORD_SIZE:
                         if(!DISPLACEMENT_SIZE)
-                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         else
-                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                          res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
                     _pc+=2;
@@ -8809,21 +8807,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
                 _pc+=2;
@@ -8887,7 +8885,7 @@ do_bra:
                         res2.x = GetIntValue(Pipe2.d);
                         break;
                       }
-                    _pc+=2;
+                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC) qua no!
                   case PCDISPSUBADD:   // (D8,Xn,PC)
@@ -8978,21 +8976,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.b.l = GetValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     else
-                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                      res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
                 _pc+=2;
@@ -9131,21 +9129,21 @@ do_bra:
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     else
-                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
+                      PutValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     break;
                   case WORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     else
-                      PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                      PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     break;
                   case DWORD_SIZE:
                     if(!DISPLACEMENT_SIZE)
-                      PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     else
-                      PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
+                      PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     break;
                   }
                 break;
@@ -9203,9 +9201,9 @@ do_bra:
                   break;
                 case PCDISPSUBADD:   // (D8,Xn,PC)
                   if(!DISPLACEMENT_SIZE)
-                    res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                    res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   else
-                    res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                    res1.w = GetShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                   _pc+=2;
                   break;
                 case IMMSUBADD:   // qua no direi
@@ -9233,10 +9231,10 @@ do_bra:
               break;
             case ADDRIDXADD:   // (D8,An,Xn)
               if(!DISPLACEMENT_SIZE) {
-                res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
+                res1.w = GetShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                 }
               else {
-                res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l)  << Pipe2.d;
+                res1.w = GetShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l)  << Pipe2.d;
                 }
               _pc+=2;
               break;
@@ -9316,9 +9314,9 @@ aggFlagRC:
                   break;
                 case PCDISPSUBADD:   // (D8,Xn,PC)
                   if(!DISPLACEMENT_SIZE)
-                    PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                    PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                   else
-                    PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                    PutShortValue(_pc + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                   break;
                 case IMMSUBADD:   // qua no!
                   break;
@@ -9342,10 +9340,10 @@ aggFlagRC:
               break;
             case ADDRIDXADD:   // (D8,An,Xn)
               if(!DISPLACEMENT_SIZE) {
-                PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                PutShortValue(WORKING_REG_A.x + (((signed short int)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                 }
               else {
-                PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
+                PutShortValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                 }
               break;
             }
@@ -9391,9 +9389,9 @@ aggFlagRC:
                     }
                   if(res2.b.l) {
                     if(Pipe1 & 0b0000000100000000)  // 
-                      _f.CCR.Ext=_f.CCR.Carry=res1.w & 0x80 ? 1 : 0;
+                      _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x80 ? 1 : 0;
                     else
-                      _f.CCR.Ext=_f.CCR.Carry=res1.w & 0x01;
+                      _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x01;
                     }
                   else {
                     _f.CCR.Carry=_f.CCR.Ext;
@@ -9469,7 +9467,7 @@ aggFlagRC1:
                       res3.w |= 1;
                     }
                   else {
-                    res3.w = res1.b.l >> res2.b.l;
+                    res3.w = res1.w >> res2.b.l;
                     if(_f.CCR.Carry)
                       res3.w |= 0x8000;
                     }
@@ -9574,7 +9572,6 @@ aggFlagR2:
             break;
           }
         _f.CCR.Ovf = 0;
-                
 				break;
         
       default:
