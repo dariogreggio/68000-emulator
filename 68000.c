@@ -33,7 +33,8 @@
 BYTE fExit=0;
 BYTE debug=0;
 #ifdef QL
-BYTE ram_seg[RAM_SIZE];
+BYTE __attribute((aligned(65536))) ram_seg[RAM_SIZE];
+#warning RAM_SEG ALIGNED x debug!
 BYTE *rom_seg;
 BYTE *rom_seg2;
 #define VIDEO_ADDRESS_BASE 0x20000
@@ -838,8 +839,8 @@ void PutIntValue(DWORD t,DWORD t1) {
 
 #define MOVEM_R2M()  if(!LOBYTE(Pipe1) & 0x40) {\
     BYTE i; WORD j;\
-    for(i=0; i<16; i++) {\
-      if(res2.w & (1 << i)) {\
+    for(i=0,j=1; i<16; i++,j<<=1) {\
+      if(res2.w & j) {\
         PutShortValue(res3.x, ALL_REGS.r[i].w.l);\
         res3.x+=2;\
         }\
@@ -847,26 +848,26 @@ void PutIntValue(DWORD t,DWORD t1) {
     }\
   else {\
     BYTE i; WORD j;\
-    for(i=0; i<16; i++) {\
-      if(res2.w & (1 << i)) {\
+    for(i=0,j=1; i<16; i++,j<<=1) {\
+      if(res2.w & j) {\
         PutIntValue(res3.x, ALL_REGS.r[i].x);\
         res3.x+=4;\
         }\
       }\
     }
 #define MOVEM_R2M_PREDEC()  if(!LOBYTE(Pipe1) & 0x40) {\
-    signed char i; WORD j;\
-    for(i=15; i>=0; i--) {\
-      if(res2.w & (1 << i)) {\
+    BYTE i; WORD j;\
+    for(i=0,j=0x8000; i<16; i++,j>>=1) {\
+      if(res2.w & j) {\
         res3.x-=2;\
         PutShortValue(res3.x, ALL_REGS.r[i].w.l);\
         }\
       }\
     }\
   else {\
-    signed char i; WORD j;\
-    for(i=15; i>=0; i--) {\
-      if(res2.w & (1 << i)) {\
+    BYTE i; WORD j;\
+    for(i=0,j=0x8000; i<16; i++,j>>=1) {\
+      if(res2.w & j) {\
         res3.x-=4;\
         PutIntValue(res3.x, ALL_REGS.r[i].x);\
         }\
@@ -874,8 +875,8 @@ void PutIntValue(DWORD t,DWORD t1) {
     }
 #define MOVEM_M2R()  if(!LOBYTE(Pipe1) & 0x40) {\
     BYTE i; WORD j;\
-    for(i=0; i<16; i++) {\
-      if(res2.w & (1 << i)) {\
+    for(i=0,j=1; i<16; i++,j<<=1) {\
+      if(res2.w & j) {\
         ALL_REGS.r[i].x = (int32_t)GetShortValue(res3.x);\
         res3.x+=2;\
         }\
@@ -883,8 +884,8 @@ void PutIntValue(DWORD t,DWORD t1) {
     }\
   else {\
     BYTE i; WORD j;\
-    for(i=0; i<16; i++) {\
-      if(res2.w & (1 << i)) {\
+    for(i=0,j=1; i<16; i++,j<<=1) {\
+      if(res2.w & j) {\
         ALL_REGS.r[i].x = GetIntValue(res3.x);\
         res3.x+=4;\
         }\
@@ -3620,6 +3621,7 @@ aggFlagC4:
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 PutValue(WORKING_REG_A.x, 0);
+                WORKING_REG_A.x++;
                 break;
               case WORD_SIZE:
                 PutShortValue(WORKING_REG_A.x, 0);
@@ -5816,14 +5818,14 @@ do_bra:
           if(!LOBYTE(Pipe1))
             _pc+=2;
 				break;
-			case 0x66:
+			case 0x66:    // Bne
         if(!_f.CCR.Zero)      // not equal
           goto do_bra;
         else
           if(!LOBYTE(Pipe1))
             _pc+=2;
 				break;
-			case 0x67:
+			case 0x67:    // Beq
         if(_f.CCR.Zero)      // equal
           goto do_bra;
         else
@@ -5858,7 +5860,7 @@ do_bra:
           if(!LOBYTE(Pipe1))
             _pc+=2;
 				break;
-			case 0x6c:
+			case 0x6c:    // Bge
         if(!(_f.CCR.Sign ^ _f.CCR.Ovf))     // greater or equal
           goto do_bra;
         else
@@ -5879,7 +5881,7 @@ do_bra:
           if(!LOBYTE(Pipe1))
             _pc+=2;
 				break;
-			case 0x6f:
+			case 0x6f:      // Ble
         if(_f.CCR.Carry || _f.CCR.Zero)     // less or equal
           goto do_bra;
         else
@@ -5895,7 +5897,7 @@ do_bra:
 			case 0x7a:
 			case 0x7c:
 			case 0x7e:
-        DEST_REG_D.x = (int8_t)LOBYTE(Pipe1);
+        res3.x = DEST_REG_D.x = (int8_t)LOBYTE(Pipe1);
         goto aggFlag4;
 				break;
         
@@ -6010,6 +6012,7 @@ do_bra:
                         res1.x = GetIntValue(Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -6023,6 +6026,7 @@ do_bra:
                         res1.x = GetIntValue(Pipe2.d);
                         break;
                       }
+                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC)
                     switch(OPERAND_SIZE) {
@@ -6036,6 +6040,7 @@ do_bra:
                         res1.x = GetIntValue(_pc+(signed short int)Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     switch(OPERAND_SIZE) {
@@ -6058,10 +6063,12 @@ do_bra:
                           res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case IMMSUBADD:   // NON dovrebbe esistere qua perché confluisce in ORI, ma...
                     res1.x = Pipe2.d; 
                     _pc+=AdvPipe(_pc,4);
+                    _pc+=4;
                     break;
                   }
                 break;
@@ -6145,6 +6152,7 @@ do_bra:
                     res1.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                     break;
                   }
+                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -6167,6 +6175,7 @@ do_bra:
                       res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
+                _pc+=2;
                 break;
               }
             }
@@ -6213,6 +6222,7 @@ do_bra:
                         res2.x = GetIntValue(Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -6226,6 +6236,7 @@ do_bra:
                         res2.x = GetIntValue(Pipe2.d);
                         break;
                       }
+                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC) qua NO!
                   case PCDISPSUBADD:   // (D8,Xn,PC)
@@ -6303,6 +6314,7 @@ do_bra:
                     res2.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                     break;
                   }
+                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -6325,6 +6337,7 @@ do_bra:
                       res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
+                _pc+=2;
                 break;
               }
             }
@@ -6357,7 +6370,6 @@ do_bra:
                         PutIntValue(Pipe2.w, res3.x);
                         break;
                       }
-                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -6371,7 +6383,6 @@ do_bra:
                         PutIntValue(Pipe2.d, res3.x);
                         break;
                       }
-                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC)
                     switch(OPERAND_SIZE) {
@@ -6385,7 +6396,6 @@ do_bra:
                         PutIntValue(_pc+(signed short int)Pipe2.w,res1.x);
                         break;
                       }
-                    _pc+=2;
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     switch(OPERAND_SIZE) {
@@ -6408,7 +6418,6 @@ do_bra:
                           PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res1.x);
                         break;
                       }
-                    _pc+=2;
                     break;
                   case IMMSUBADD:   // qua no!
                     break;
@@ -6483,7 +6492,6 @@ do_bra:
                     PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w,res3.x);
                     break;
                   }
-                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -6506,7 +6514,6 @@ do_bra:
                       PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     break;
                   }
-                _pc+=2;
                 break;
               }
             }
@@ -6682,6 +6689,7 @@ do_bra:
                         res1.x = GetIntValue(Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -6695,6 +6703,7 @@ do_bra:
                         res1.x = GetIntValue(Pipe2.d);
                         break;
                       }
+                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC)
                     switch(OPERAND_SIZE) {
@@ -6708,6 +6717,7 @@ do_bra:
                         res1.x = GetIntValue(_pc+(signed short int)Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     switch(OPERAND_SIZE) {
@@ -6730,9 +6740,11 @@ do_bra:
                           res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case IMMSUBADD:
                     res1.x = Pipe2.d; 
+                    _pc+=4;
                     break;
                   }
                 break;
@@ -6850,6 +6862,7 @@ do_bra:
                     res1.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                     break;
                   }
+                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -6872,6 +6885,7 @@ do_bra:
                       res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
+                _pc+=2;
                 break;
               }
             }
@@ -6918,6 +6932,7 @@ do_bra:
                         res2.x = GetIntValue(Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -6931,6 +6946,7 @@ do_bra:
                         res2.x = GetIntValue(Pipe2.d);
                         break;
                       }
+                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC)
                     switch(OPERAND_SIZE) {
@@ -6944,6 +6960,7 @@ do_bra:
                         res2.x = GetIntValue(_pc+(signed short int)Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     switch(OPERAND_SIZE) {
@@ -6966,9 +6983,11 @@ do_bra:
                           res2.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case IMMSUBADD:
                     res2.x = Pipe2.d; 
+                    _pc+=4;
                     break;
                   }
                 break;
@@ -7049,6 +7068,7 @@ do_bra:
                     res2.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                     break;
                   }
+                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -7071,6 +7091,7 @@ do_bra:
                       res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
+                _pc+=2;
                 break;
               }
             }
@@ -7103,7 +7124,6 @@ do_bra:
                         PutIntValue(Pipe2.w, res3.x);
                         break;
                       }
-                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -7131,7 +7151,6 @@ do_bra:
                         PutIntValue(_pc+(signed short int)Pipe2.w, res3.x);
                         break;
                       }
-                    _pc+=2;
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     switch(OPERAND_SIZE) {
@@ -7154,11 +7173,9 @@ do_bra:
                           PutIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l, res3.x);
                         break;
                       }
-                    _pc+=2;
                     break;
                   case IMMSUBADD:
 //??                    res2.x = Pipe2.d; 
-//                    _pc+=4;
                     break;
                   }
                 break;
@@ -7228,7 +7245,6 @@ do_bra:
                     PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w,res3.x);
                     break;
                   }
-                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -7251,7 +7267,6 @@ do_bra:
                       PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     break;
                   }
-                _pc+=2;
                 break;
               }
             }
@@ -7948,6 +7963,7 @@ do_bra:
                         res1.x = GetIntValue(Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -7961,6 +7977,7 @@ do_bra:
                         res1.x = GetIntValue(Pipe2.d);
                         break;
                       }
+                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC)
                     switch(OPERAND_SIZE) {
@@ -7974,6 +7991,7 @@ do_bra:
                         res1.x = GetIntValue(_pc+(signed short int)Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     switch(OPERAND_SIZE) {
@@ -7996,9 +8014,11 @@ do_bra:
                           res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case IMMSUBADD:
                     res1.x = Pipe2.d; 
+                    _pc+=4;
                     break;
                   }
                 break;
@@ -8105,7 +8125,7 @@ do_bra:
                     res1.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                     break;
                   }
-
+                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -8128,7 +8148,7 @@ do_bra:
                       res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
-
+                _pc+=2;
                 break;
               }
             }
@@ -8175,6 +8195,7 @@ do_bra:
                         res2.x = GetIntValue(Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -8188,6 +8209,7 @@ do_bra:
                         res2.x = GetIntValue(Pipe2.d);
                         break;
                       }
+                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC) qua NO!
                   case PCDISPSUBADD:   // (D8,Xn,PC)
@@ -8265,6 +8287,7 @@ do_bra:
                     res2.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                     break;
                   }
+                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -8287,6 +8310,7 @@ do_bra:
                       res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
+                _pc+=2;
                 break;
               }
             }
@@ -8319,7 +8343,6 @@ do_bra:
                         PutIntValue(Pipe2.w, res3.x);
                         break;
                       }
-                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -8333,7 +8356,6 @@ do_bra:
                         PutIntValue(Pipe2.d, res3.x);
                         break;
                       }
-                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC) qua NO!
                   case PCDISPSUBADD:   // (D8,Xn,PC)
@@ -8410,7 +8432,6 @@ do_bra:
                     PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w,res3.x);
                     break;
                   }
-                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -8433,7 +8454,6 @@ do_bra:
                       PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     break;
                   }
-                _pc+=2;
                 break;
               }
             }
@@ -8610,6 +8630,7 @@ do_bra:
                         res1.x = GetIntValue(Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -8623,6 +8644,7 @@ do_bra:
                         res1.x = GetIntValue(Pipe2.d);
                         break;
                       }
+                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC)
                     switch(OPERAND_SIZE) {
@@ -8636,6 +8658,7 @@ do_bra:
                         res1.x = GetIntValue(_pc+(signed short int)Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case PCDISPSUBADD:   // (D8,Xn,PC)
                     switch(OPERAND_SIZE) {
@@ -8658,9 +8681,11 @@ do_bra:
                           res1.x = GetIntValue(_pc + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case IMMSUBADD:
                     res1.x = Pipe2.d; 
+                    _pc+=4;
                     break;
                   }
                 break;
@@ -8778,6 +8803,7 @@ do_bra:
                     res1.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                     break;
                   }
+                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -8800,6 +8826,7 @@ do_bra:
                       res1.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
+                _pc+=2;
                 break;
               }
             }
@@ -8846,6 +8873,7 @@ do_bra:
                         res2.x = GetIntValue(Pipe2.w);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -8859,6 +8887,7 @@ do_bra:
                         res2.x = GetIntValue(Pipe2.d);
                         break;
                       }
+                    _pc+=2;
                     break;
                   case PCIDXSUBADD:   // (D16,PC) qua no!
                   case PCDISPSUBADD:   // (D8,Xn,PC)
@@ -8943,6 +8972,7 @@ do_bra:
                     res2.x = GetIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w);
                     break;
                   }
+                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -8965,6 +8995,7 @@ do_bra:
                       res2.x = GetIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l);
                     break;
                   }
+                _pc+=2;
                 break;
               }
             }
@@ -8997,7 +9028,6 @@ do_bra:
                         PutIntValue(Pipe2.w, res3.x);
                         break;
                       }
-                    _pc+=2;
                     break;
                   case ABSLSUBADD:
                     switch(OPERAND_SIZE) {
@@ -9011,7 +9041,6 @@ do_bra:
                         PutIntValue(Pipe2.d, res3.x);
                         break;
                       }
-                    _pc+=4;
                     break;
                   case PCIDXSUBADD:   // (D16,PC) qua NO!
                   case PCDISPSUBADD:   // (D8,Xn,PC)
@@ -9097,7 +9126,6 @@ do_bra:
                     PutIntValue(WORKING_REG_A.x + (signed short int)Pipe2.w,res3.x);
                     break;
                   }
-                _pc+=2;
                 break;
               case ADDRIDXADD:   // (D8,An,Xn)
                 switch(OPERAND_SIZE) {
@@ -9120,7 +9148,6 @@ do_bra:
                       PutIntValue(WORKING_REG_A.x + (((signed int)DISPLACEMENT_REG.x)*DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     break;
                   }
-                _pc+=2;
                 break;
               }
             }
