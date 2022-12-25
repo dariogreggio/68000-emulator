@@ -47,7 +47,7 @@ union {
   BYTE b[4];
   DWORD d;
   } RTC;
-BYTE IPCW=0,IPCR=0;
+BYTE IPCW=255,IPCR=0, IPCData=0,IPCCnt=0x08,IPCState=0;
 #elif MICHELEFABBRI
 BYTE ram_seg[RAM_SIZE];
 BYTE *rom_seg;
@@ -84,8 +84,9 @@ BYTE i8042RegR[2],i8042RegW[2];
 #endif
 BYTE KBDataI,KBDataO,KBControl,/*KBStatus,*/ KBRAM[32];   // https://wiki.osdev.org/%228042%22_PS/2_Controller
 #define KBStatus KBRAM[0]   // pare...
-BYTE Keyboard[1]={0};
-volatile BYTE TIMIRQ,VIDIRQ,KBDIRQ,SERIRQ,RTCIRQ;
+BYTE Keyboard[3]={0,0,0};     // tasto, modifier, #tasti
+volatile BYTE TIMIRQ=0,VIDIRQ=0,KBDIRQ=0,SERIRQ=0,RTCIRQ=0;
+BYTE IRQenable=0;
 
 extern volatile BYTE keysFeedPtr;
 
@@ -154,25 +155,137 @@ BYTE GetValue(DWORD t) {
       case 3:        //   IPC Wr
         i=IPCW;     // mah dice qua solo WR..  scrive 0x0e, pare
         // (tastiera ecc va qua...)  scrive 4 o 8 bit, data 1=$0E or 0=$0C
+//				IPCCnt++;
+        
         break;
         // 0x0d è IPC per seriale_baud_rate, 0x01 è report input status, 6=read ser1, 7=read ser2, 8=read keyboard
-      case 0x20:        //   microdrive/RS232 link status
-        i=IPCR;
-        // (tastiera, beep ecc va qua...) https://www.sinclairql.net/srv/qlsm1.html#s1-p4
-        
-        
-          VIDIRQ=0; 
-          KBDIRQ=0; // mandare Keyboard[0]
-          IPL=0;
 
-          i=0;      // handshake b6=0; b7 è il dato, ne legge 4 o 8 (dopo aver scritto in 18003) di seguito e accumula (MSB first)
-          // b6=microdrive write protect, b1=sound, b0=keyboard, b4=seriale1, b5=seriale2
+      case 0x20:        //   microdrive/RS232 link status
+//        i=IPCR;
+        // (tastiera, beep ecc va qua...) https://www.sinclairql.net/srv/qlsm1.html#s1-p4
+
+        if(!IPCCnt) {
+          switch(IPCW) {
+            case 0x01:      // read status
+              IPCData=0x01;       // b6=microdrive write protect, b1=sound, b0=keyboard, b4=seriale1, b5=seriale2
+              IPCCnt=0x80;
+              break;
+            case 0x08:      // read keyboard
+  //				PRIMA 4bit cnt (b3=repeat key, b2-0 number of keys), POI 4 bit modifier (b4=overflow, b2=SHIFT, b1=CTRL, b0=ALT) e POI 8 bit tasto(i)!
+              switch(IPCState) {
+                case 0:
+                  IPCData=Keyboard[2];       // num tasti, 4bit
+                  IPCCnt=0x8;
+                  break;
+                case 1:
+                  IPCData=Keyboard[1];       // modifier, 4bit
+                  IPCCnt=0x8;
+                  break;
+                case 2:
+                  IPCData=Keyboard[0];       // tasti, 8bit, per ora solo 1!
+                  IPCCnt=0x80;
+                  break;
+                }
+              break;
+            case 0:
+              break;
+            default /*255*/:      // qua ci passiamo anche quando scrive (primo giro) per creare IPCW..
+              break;
+            }
+          }
+        
+        i=0b01000000 | (IPCData & IPCCnt ? 0b10000000 : 0);      // finto handshake :)
+        i=0b00000000 | (IPCData & IPCCnt ? 0b10000000 : 0);      // handshake b6=0; b7 è il dato, 
+//				triggerare da IPCW=8! read_keyboard
+        switch(IPCW) {
+          case 0x01:      // read status
+            if(IPCW==255)
+              IPCCnt>>=1;
+            if(!IPCCnt) {
+              IPCW=0;
+              }
+            break;
+          case 0x06:      // read serial 1
+            if(IPCW==255)
+              IPCCnt>>=1;
+            if(!IPCCnt) {
+              IPCW=0;
+              IPCState++;
+              }
+            break;
+          case 0x07:      // read serial 2
+            if(IPCW==255)
+              IPCCnt>>=1;
+            if(!IPCCnt) {
+              IPCW=0;
+              IPCState++;
+              }
+            break;
+          case 0x08:      // read keyboard
+            switch(IPCState) {
+              case 0:     // num tasti e modifier 4 bit
+              case 1:
+                if(IPCW==255)
+                  IPCCnt>>=1;
+                if(!IPCCnt) {
+                  IPCW=0;
+                  IPCState++;
+                  }
+                break;
+              case 2:
+                if(IPCW==255)
+                  IPCCnt>>=1;
+                if(!IPCCnt) {
+                  IPCW=0;
+                  IPCState=0;
+                  }
+                break;
+              default:
+                IPCState=0;
+                break;
+              }
+            break;
+          case 0x0d:      // read microdrive
+            if(IPCW==255)
+              IPCCnt>>=1;
+            if(!IPCCnt) {
+              IPCW=0;
+              IPCState=0;
+              }
+            break;
+          case 255:
+            break;
+          default:      // safety...?
+            if(IPCW==255)
+              IPCCnt>>=1;
+            if(!IPCCnt) {
+              IPCW=0;
+              IPCState=0;
+              }
+            break;
+          }
+//        if(!IPCCnt && Keyboard[0])
+//					IPCData=Keyboard[0];
+        
+//          VIDIRQ=0; 
+//          KBDIRQ=0; // mandare Keyboard[0]
+//                    IPL=0;  //DOVE metterlo??
+
+
+				//ne legge 4 o 8 (dopo aver scritto in 18003) di seguito e accumula (MSB first)
+        // b6=microdrive write protect, b1=sound, b0=keyboard, b4=seriale1, b5=seriale2
         break;
 
       case 0x21:        //   interrupt/IPC link status
 //    B 	M 	R 	X 	F 	T 	 I  	G 	 B=Baud state, M=Microdrive inactive, R=Rtc state, X=eXternal Interrupt, F=Frame vsync, T=Transmit interrupt, I=IPC Interface interrupt G=Gap interrupt (microdrive)
         i=VIDIRQ ? 0b00001000 : 0; 
         i |= KBDIRQ ? 0b00000010 : 0; 
+//        i |= SERIRQ ? 0b00000100 : 0; 
+//        i |= uDriveIRQ ? 0b00000001 : 0; 
+        
+        IPL=0;    //boh
+        
+        
         break;
     
       case 0x22:
@@ -541,23 +654,79 @@ void PutValue(DWORD t,BYTE t1) {
         break;
         
       case 3:        //   IPC Wr
-        IPCW=IPCR=t1;
+//        IPCW=IPCR=t1;
         // (tastiera ecc va qua...)  https://www.sinclairql.net/srv/qlsm1.html#s1-p4
-        // scrive 0x0c per video irq frame
-          VIDIRQ=0; KBDIRQ=0;
-          IPL=0;
+        // (no! scrive 0x0c per video irq frame)
+        // 0x0d è IPC per seriale_baud_rate, 0x01 è report input status, 6=read ser1, 7=read ser2, 8=read keyboard
+        // scrive 4 o 8 bit, data 1=$0E or 0=$0C
+        if(t1==1) {      // boh lo fa al boot.. io ripristino
+          IPCW=255; IPCR=IPCData=0; IPCCnt=0x08; IPCState=0;
+          }
+        else {
+          switch(IPCW) {
+            case 0:     // lettura data
+              if((t1 & 0x0e) == 0x0e) {
+                IPCCnt >>= 1;
+                }
+              break;
+            case 255:   // scrittura cmd
+              if((t1 & 0x0c) == 0x0c) {
+                IPCData <<= 1;
+                IPCData |= t1 & 2 ? IPCCnt : 0;
+                IPCCnt >>= 1;
+        //				IPCW <<= 1;
+        //				IPCW |= t1 & 2 ? 1 : 0;
+                if(!IPCCnt) {
+                  switch(IPCData) {  // if(!IPCCnt MA LO SHIFT è IN READ...
+                    case 0x01:
+                      IPCW=0x01;
+                      break;
+                    case 0x06:
+                      IPCW=0x06;
+                      break;
+                    case 0x07:
+                      IPCW=0x07;
+                      break;
+                    case 0x08:
+                      IPCW=0x08;
+                      break;
+                    case 0x0d:
+                      IPCW=0x0d;
+                      break;
+                    default:
+                      IPCW=0;
+                      break;
+                    }
+                  }
+                }
+              break;
+            default:
+              break;
+            }
+          }
+
+//          VIDIRQ=0; KBDIRQ=0;
+//          IPL=0;  //DOVE metterlo??
           
         break;
         
       case 0x20:        //   microdrive/RS232 link status
+//				IPCData <<= 1;
+//				IPCData |= t1 & 2 ? (1 << IPCCnt) : 0;
         break;
 
       case 0x21:        //   interrupt/IPC link status
-//   R 	F 	M 	X 	F 	T 	 I  	G 	 R=tRansmit mask, F=interFace mask, M=gap Mask,X=reset eXternal Interrupt,F=reset Frame vsync, T=reset Transmit interrupt, I=reset IPC Interface interrupt G=reset Gap interrupt 
+//  R 	F 	M 	X 	F 	T 	I  	G 	 R=tRansmit mask, F=interFace mask, M=gap Mask,
+        //X=reset eXternal Interrupt,F=reset Frame vsync, T=reset Transmit interrupt, I=reset IPC Interface interrupt G=reset Gap interrupt 
+//	verificare pc.intre quanto vale! scrive per pulire ;  pc.intri=2, pc.intrf=8, pc.intrt=4
         if(t1 & 0b00001000)
           VIDIRQ=0; 
         if(t1 & 0b00000010)
           KBDIRQ=0; 
+        if(t1 & 0b00000100)
+          SERIRQ=0; 
+        // i 3 bit alti potrebbero essere "enable"... (trovare)
+        IRQenable=t1 & 0xe0;
         break;
     
       case 0x22:
@@ -1100,8 +1269,8 @@ int c=0;
       VICRaster+=8;     // 
       if(VICRaster>=256) {
         VICRaster=0;
-        VIDIRQ=1;
-        IPL=0b010;    // 2, dice
+        if(0 /*dov'è??*/)
+          VIDIRQ=1;
         }
 #else
 			UpdateScreen(1);      // 50mS 17/11/22
@@ -1130,15 +1299,18 @@ int c=0;
 
 
     if(RTCIRQ) {      // bah non sembra esserci qua...
-//      IPL=0b110;
+      if(0 /*bah non sembra esserci qua...*/)
+        IPL=0b110;
 #ifndef QL
       LCDram[0x40+20+19]++;
 #endif
       RTCIRQ=0;
       }
-    if(KBDIRQ) {
-      IPL=0b010;    // 2, dice
+#ifdef QL
+    if(KBDIRQ || VIDIRQ /*|| TIMIRQ || SERIRQ || RTCIRQ*/) {
+      IPL=0b010;    // 2, 
       }
+#endif
 #ifdef QL
 #elif MICHELEFABBRI
 #else
@@ -1165,14 +1337,14 @@ int c=0;
 			printf("37-38: %02x %02x\n",*(p1+0x37),*(p1+0x38));
 			}*/
 		if(DoReset) {
-      IPL=0b000;  // credo..
+      IPL=0b000;  // 
       FC=0b110;
       _f.SR.w=0b0010011100000000;   // supervisor, IPL=7, area programma VERIFICARE
 			_pc=GetIntValue(0x00000004);
 			_sp=GetIntValue(0x00000000);   // bah per sicurezza li imposto entrambi :D NO!
       a7S=_sp;
 			DoReset=0;
-      ActivateReset=0;
+      ActivateReset=128;    // così facciamo tutto :)
 			}
 		if(IPL > _f.SR.IRQMask || IPL==7) {     // https://www.cs.mcgill.ca/~cs573/fall2002/notes/lec273/lecture21/21_2.htm
       // PERO' dice anche che 7 NON PUO' essere ignorato...
@@ -1215,6 +1387,11 @@ int c=0;
       // abbassare pin HW...
       ActivateReset--;
       if(!ActivateReset) {
+        
+        TIMIRQ=VIDIRQ=KBDIRQ=SERIRQ=RTCIRQ=0;
+        IPCW=255; IPCR=0; IPCData=IPCState=0; IPCCnt=0x08;
+        Keyboard[0] = Keyboard[1] = Keyboard[2] = 0x0;
+
         // e alzare
         }
       }
@@ -1247,11 +1424,11 @@ int c=0;
   */    
     
     
-      if(!SW2) {        // test tastiera, me ne frego del repeat/rientro :)
+      if(!SW1) {        // test tastiera, me ne frego del repeat/rientro :)
        // continue;
         __delay_ms(100); ClrWdt();
         }
-      if(!SW1)        // test tastiera
+      if(!SW2)        // test tastiera
         keysFeedPtr=0;
 
       LED2^=1;    // ~700nS 7/6/20, ~600 con 32bit 10/7/21 MA NON FUNZIONA/visualizza!! verificare
@@ -1291,6 +1468,7 @@ aggSR:
 	                goto noAggFlag;
                   }
                 else {
+doPrivilegeTrap:
                   res3.b.l=8;
                   goto doTrap;
                   }
@@ -1716,8 +1894,7 @@ doBit2:   ;
 			            goto aggSR;
                   }
                 else {
-                  res3.b.l=8;
-                  goto doTrap;
+                  goto doPrivilegeTrap;
                   }
                 break;
               default:
@@ -2461,8 +2638,8 @@ aggFlagA4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
             _f.CCR.Carry=!!(((unsigned long long)res1.x + (unsigned long long)res2.x) >> 32);
-            _f.CCR.Ovf = !!((((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
-                    !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000));
+            _f.CCR.Ovf = !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
+                    !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000);
             // credo sia meglio di usare QWORD longlong...
             break;
           }
@@ -2485,8 +2662,7 @@ aggFlagA4:
 			            goto aggSR;
                   }
                 else {
-                  res3.b.l=8;
-                  goto doTrap;
+                  goto doPrivilegeTrap;
                   }
                 break;
               default:
@@ -4226,8 +4402,7 @@ trap_chk_6:
                       goto aggSR;
                       }
                     else {
-                      res3.b.l=8;
-                      goto doTrap;
+                      goto doPrivilegeTrap;
                       }
                     break;
                   }
@@ -4253,8 +4428,7 @@ trap_chk_6:
                       goto aggSR;
                       }
                     else {
-                      res3.b.l=8;
-                      goto doTrap;
+                      goto doPrivilegeTrap;
                       }
                     break;
                   }
@@ -4268,8 +4442,7 @@ trap_chk_6:
                       goto aggSR;
                       }
                     else {
-                      res3.b.l=8;
-                      goto doTrap;
+                      goto doPrivilegeTrap;
                       }
                     break;
                   }
@@ -4286,8 +4459,7 @@ trap_chk_6:
                       goto aggSR;
                       }
                     else {
-                      res3.b.l=8;
-                      goto doTrap;
+                      goto doPrivilegeTrap;
                       }
                     break;
                   }
@@ -4301,8 +4473,7 @@ trap_chk_6:
                       goto aggSR;
                       }
                     else {
-                      res3.b.l=8;
-                      goto doTrap;
+                      goto doPrivilegeTrap;
                       }
                     break;
                   }
@@ -4329,8 +4500,7 @@ trap_chk_6:
                   goto aggSR;
                   }
                 else {
-                  res3.b.l=8;
-                  goto doTrap;
+                  goto doPrivilegeTrap;
                   }
 			          break;
               }
@@ -4357,8 +4527,7 @@ trap_chk_6:
     							goto aggSR;
                   }
                 else {
-                  res3.b.l=8;
-                  goto doTrap;
+                  goto doPrivilegeTrap;
                   }
 			          break;
               }
@@ -4387,8 +4556,7 @@ trap_chk_6:
 									goto aggSR;
                   }
                 else {
-                  res3.b.l=8;
-                  goto doTrap;
+                  goto doPrivilegeTrap;
                   }
 			          break;
               }
@@ -4417,8 +4585,7 @@ trap_chk_6:
 									goto aggSR;
                   }
                 else {
-                  res3.b.l=8;
-                  goto doTrap;
+                  goto doPrivilegeTrap;
                   }
 			          break;
               }
@@ -4444,8 +4611,7 @@ trap_chk_6:
 									goto aggSR;
                   }
                 else {
-                  res3.b.l=8;
-                  goto doTrap;
+                  goto doPrivilegeTrap;
                   }
 			          break;
               }
@@ -4490,8 +4656,7 @@ trap_chk_6:
 										goto aggSR;
                     }
                   else {
-                    res3.b.l=8;
-                    goto doTrap;
+                    goto doPrivilegeTrap;
                     }
                   }
                 else {
@@ -4500,8 +4665,7 @@ trap_chk_6:
 										goto aggSR;
                     }
                   else {
-                    res3.b.l=8;
-                    goto doTrap;
+                    goto doPrivilegeTrap;
                     }
                   }
 			          break;
@@ -4918,8 +5082,7 @@ trap_chk_6:
               ActivateReset=124;
               }
             else {
-              res3.b.l=8;
-              goto doTrap;
+              goto doPrivilegeTrap;
               }
             break;
           case 0x71:   // NOP
@@ -4936,8 +5099,7 @@ trap_chk_6:
               goto aggSR;
               }
             else {
-              res3.b.l=8;
-              goto doTrap;
+              goto doPrivilegeTrap;
               }
 
             break;
@@ -4951,8 +5113,7 @@ trap_chk_6:
               goto aggSR;
               }
             else {
-              res3.b.l=8;
-              goto doTrap;
+              goto doPrivilegeTrap;
               }
             break;
 #ifdef MC68010
@@ -4994,6 +5155,7 @@ trap_chk_6:
           case 0x4e:
           case 0x4f:
             res3.b.l=LOBYTE(Pipe1) & 0xf;
+            res3.b.l+=32;      // trap utente DOPO le trap/IRQ
             
 doTrap:
             FC=0b110;
@@ -5008,7 +5170,7 @@ doTrap:
             PutIntValue(_sp,_pc); // low word prima
             _sp-=2;
             PutShortValue(_sp,_fsup.w);
-            _pc=GetIntValue(0x00000080+(res3.b.l)*4);
+            _pc=GetIntValue(res3.b.l*4);
             
             printf("68K exception %u\r\n",res3.b.l);
             break;
@@ -5051,8 +5213,7 @@ doTrap:
 							a7U = WORKING_REG_A.x;
 							}
 						else {
-              res3.b.l=8;
-							goto doTrap;
+							goto doPrivilegeTrap;
 							}
             break;
           case 0x68:		// MOVE USP
@@ -5067,8 +5228,7 @@ doTrap:
 							WORKING_REG_A.x = a7U;
 							}
 						else {
-              res3.b.l=8;
-							goto doTrap;
+							goto doPrivilegeTrap;
 							}
             break;
           default:
@@ -9332,14 +9492,14 @@ aggFlagAX:
                 res3.w = res1.w << res2.b.l;
               else
                 res3.w = (signed short int)res1.w >> res2.b.l;
-              goto aggFlagRC;
+              goto aggFlagRX;
               break;
             case 0b010:   //LSd
               if(Pipe1 & 0b0000000100000000)  // rotate direction
                 res3.w = res1.w << res2.b.l;
               else
                 res3.w = res1.w >> res2.b.l;
-              goto aggFlagRC;
+              goto aggFlagRX;
               break;
             case 0b100:   //ROXd
               if(Pipe1 & 0b0000000100000000) {  // rotate direction
@@ -9352,6 +9512,7 @@ aggFlagAX:
                 if(_f.CCR.Ext)
                   res3.w |= 0x8000;
                 }
+aggFlagRX:
               if(res2.b.l) {
                 if(Pipe1 & 0b0000000100000000)  // 
                   _f.CCR.Ext=_f.CCR.Carry=res1.w & 0x8000 ? 1 : 0;
@@ -9374,7 +9535,6 @@ aggFlagAX:
                   res3.w |= 0x8000;
                 }
               
-aggFlagRC:
               if(res2.b.l) {
                 if(Pipe1 & 0b0000000100000000)
                   _f.CCR.Carry=res1.w & 0x8000 ? 1 : 0;
@@ -9451,14 +9611,14 @@ aggFlagRC:
                     res3.b.l = res1.b.l << res2.b.l;
                   else
                     res3.b.l = (signed char)res1.b.l >> res2.b.l;
-                  goto aggFlagRC1;
+                  goto aggFlagRX1;
                   break;
                 case 0b01000:   //LSd
                   if(Pipe1 & 0b0000000100000000)  // rotate direction
                     res3.b.l = res1.b.l << res2.b.l;
                   else
                     res3.b.l = res1.b.l >> res2.b.l;
-                  goto aggFlagRC1;
+                  goto aggFlagRX1;
                   break;
                 case 0b10000:   //ROXd
                   if(Pipe1 & 0b0000000100000000) {  // rotate direction
@@ -9471,6 +9631,8 @@ aggFlagRC:
                     if(_f.CCR.Ext)
                       res3.b.l |= 0x80;
                     }
+                  
+aggFlagRX1:
                   if(res2.b.l) {
                     if(Pipe1 & 0b0000000100000000)  // 
                       _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x80 ? 1 : 0;
@@ -9493,7 +9655,6 @@ aggFlagRC:
                       res3.b.l |= 0x80;
                     }
                   
-aggFlagRC1:
                   if(res2.b.l) {
                     if(Pipe1 & 0b0000000100000000)
                       _f.CCR.Carry=res1.b.l & 0x80 ? 1 : 0;
@@ -9514,14 +9675,14 @@ aggFlagRC1:
                     res3.w = res1.w << res2.b.l;
                   else
                     res3.w = (signed short int)res1.w >> res2.b.l;
-                  goto aggFlagRC2;
+                  goto aggFlagRX2;
                   break;
                 case 0b01000:   //LSd
                   if(Pipe1 & 0b0000000100000000)  // rotate direction
                     res3.w = res1.w << res2.b.l;
                   else
                     res3.w = res1.w >> res2.b.l;
-                  goto aggFlagRC2;
+                  goto aggFlagRX2;
                   break;
                 case 0b10000:   //ROXd
                   if(Pipe1 & 0b0000000100000000) {  // rotate direction
@@ -9534,6 +9695,8 @@ aggFlagRC1:
                     if(_f.CCR.Ext)
                       res3.w |= 0x8000;
                     }
+                  
+aggFlagRX2:
                   if(res2.b.l) {
                     if(Pipe1 & 0b0000000100000000)  // 
                       _f.CCR.Ext=_f.CCR.Carry=res1.w & 0x8000 ? 1 : 0;
@@ -9556,7 +9719,6 @@ aggFlagRC1:
                       res3.w |= 0x8000;
                     }
                   
-aggFlagRC2:
                   if(res2.b.l) {
                     if(Pipe1 & 0b0000000100000000)  // 
                       _f.CCR.Carry=res1.w & 0x8000 ? 1 : 0;
@@ -9571,24 +9733,20 @@ aggFlagRC2:
               break;
             case DWORD_SIZE:
               res1.x=WORKING_REG_D.x;
-              if(Pipe1 & 0b0000000100000000)  // rotate direction
-                _f.CCR.Carry=res1.x & 0x80000000 ? 1 : 0;
-              else
-                _f.CCR.Carry=res1.x & 0x00000001;
               switch(Pipe1 & 0b0000000000011000) {
                 case 0b00000:   //ASd
                   if(Pipe1 & 0b0000000100000000)  // rotate direction
                     res3.x = res1.x << res2.b.l;
                   else
                     res3.x = (signed int)res1.x >> res2.b.l;
-                  goto aggFlagRC4;
+                  goto aggFlagRX4;
                   break;
                 case 0b01000:   //LSd
                   if(Pipe1 & 0b0000000100000000)  // rotate direction
                     res3.x = res1.x << res2.b.l;
                   else
                     res3.x = res1.x >> res2.b.l;
-                  goto aggFlagRC4;
+                  goto aggFlagRX4;
                   break;
                 case 0b10000:   //ROXd
                   if(Pipe1 & 0b0000000100000000) {  // rotate direction
@@ -9601,6 +9759,8 @@ aggFlagRC2:
                     if(_f.CCR.Ext)
                       res3.x |= 0x80000000;
                     }
+                  
+aggFlagRX4:
                   if(res2.b.l) {
                     if(Pipe1 & 0b0000000100000000)  // 
                       _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x80000000 ? 1 : 0;
@@ -9623,7 +9783,6 @@ aggFlagRC2:
                       res3.x |= 0x80000000;
                     }
                   
-aggFlagRC4:
                   if(res2.b.l) {
                     if(Pipe1 & 0b0000000100000000)  // 
                       _f.CCR.Carry=res1.x & 0x80000000 ? 1 : 0;
@@ -9639,7 +9798,6 @@ aggFlagRC4:
             }
           }
         
-aggFlagR:
         switch(OPERAND_SIZE) {
           case BYTE_SIZE:
             _f.CCR.Zero=!res3.b.l;
