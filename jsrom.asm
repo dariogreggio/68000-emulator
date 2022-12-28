@@ -19,6 +19,84 @@
 ;                                                                             ;
 ;-----------------------------------------------------------------------------;
 
+3a0a 33da
+e76
+L6646  -> 4ee4 4e7a  -> 6666 :D -> 4abc
+
+
+(a 28000h)
+SV_IDENT $00 54D2 word identification word
+
+The following variables are the pointers which define the current state of the Qdos memory map.
+SV_CHEAP $04 28e00 long  base of common heap area
+SV_CHPFR $08 00000 00f69 long  first free space in common heap area
+SV_FREE $0C  28e00 3f400 long  base of free area
+SV_BASIC $10 00000 3f600 long  base of basic area
+SV_TRNSP $14 40000 long base of transient program area
+SV_TRNFR $18 00000 long first free space in transient program area
+SV_RESPR $1C 40000 long base of resident procedure area
+SV_RAMT $20  40000 long top of ram (+1)
+SV_RAND $2E  0000 word random number
+SV_POLLM $30 0000 word count of poll interupts missed
+SV_TVMOD $32 0000 byte 0 if not TV display
+SV_SCRST $33 0 byte screen status (0= active)
+SV_MCSTA $34 0 08 byte current value of display control register
+SV_PClNT $35 C0 byte current value of interrupt control/mask register
+SV_NETNR $37 00 01 byte network station number
+
+The following system variables are pointers to the list of tasks and drivers.
+SV_I2LST $38 00000  long  pointer to list of interrupt 2 drivers
+SV_PLlST $3C 00000  02cf8  long pointer to list of polled tasks
+SV_SHLST $40 00000  01202 long pointer to list of scheduler tasks
+SV_DRLST $44 00000  00ac0  long pointer to list of device drivers
+SV_DDLST $48 00000  01230  long pointer to list of directory device drivers
+
+SV_KEYQ $4C  00000  long pointer to a keyboard queue
+SV_TRAPV $50 00000  pointer to the trap redirection table
+
+The following system variables are pointers to the resource management tables.
+The slave block tables have 8 byte entries, whilst the others have 4 byte entries.
+SV_BTPNT $54 28780  long pointer to most recent slave block entry
+SV_BTBAS $58 28480  long pointer to base of slave block table
+SV_BTTOP $5C 28a80  long pointer to top of slave block table
+SV_JBTAG $60 0000   word current value of job tag
+SV_JBMAX $62 0000  word highest current job number
+SV_JBPNT $64 28a80  long pointer to current job table entry
+SV_JBBAS $68 28a80  long pointer to base of job table
+SV_JBTOP $6C 28b60  long pointer to top of job table
+SV_CHTAG $70 0000 0003 word current value of channel tag
+SV_CHMAX $72 0000 0000 word highest current channel number
+SV_CHPNT $74 28b60  long pointer to last channel checked
+SV_CHBAS $78 28b60  long pointer to base of channel table
+SV_CHTOP $7C 28e00  long pointer to top of channel table
+
+The following variables contain information about how to treat the keyboard, and
+about other aspects of the IPC and serial port communications. SV_CAPS,
+SV_ARDEL, SV_ARFRQ and SV_CSUB can safely be poked.
+
+SV_CAPS $88  0000  word caps lock
+SV_ARBUF $8A  0000 word autorepeat buffer
+SV_ARDEL $8C  001e  word autorepeat delay
+SV_ARFRQ $8E  0002  word autorepeat 1/freq
+SV_ARCNT $90  0000  word autorepeat count
+SV_CQCH $92   0003  word keyboard change queue character code
+SV_SOUND $96  0000  word sound status
+SV_SER1C $98 long receive channel 1 queue address
+SV_SER2C $9C long receive channel 2 queue address
+SV_TMODE $A0  01  byte ZX8302 transmit mode (includes baudrate)
+SV_CSUB $A2  00000  long subroutine to jump to on CAPSLOCK
+SV_TIMO $A6  0000  word timeout for switching transmit mode
+SV_TIMOV $A8 0001  word value of switching timeout (two characters)
+SV_FSTAT $AA  0000   word flashing cursor status
+SV_MDRUN $EE  00  byte which drive is running?
+SV_MDCNT $EF  00   byte microdrive run-up run-down counter
+SV_MDDID $F0 8 bytes drive ID*4 of each microdrive
+SV_MDSTA $F8 8 bytes status 0=no pending ops
+SV_FSDEF $100 16*long pointers to file system physical definition
+SV_FSLST $140 long pointer to list of file channel definitions
+
+
+
         include qdos_defns
 
 ;Unavoidable absolute references (to internal ROM routines/data).
@@ -97,7 +175,7 @@ L005E   rte
         dc.l    L031A         ;Trap #0
         dc.l    L031E         ;  "   1
         dc.l    L0324         ;  "   2
-        dc.l    L032A         ;  "   3
+        dc.l    L032A         ;  "   3			trap3
         dc.l    L0330         ;  "   4
         dc.l    L0038         ;  "   5
         dc.l    L003A         ;  "   6
@@ -218,10 +296,10 @@ L0184   moveq   #0,d0     0x7000              ;pass 1, first test data
         moveq   #-1,d1    0x72ff              ;pass 1, second test data
         moveq   #-1,d7    0x7eff              ;white screen for first test failure
 L018A   lea     ra_bot,a3     0x47f900020000          ;start at bottom of RAM
-        movea.l a3,a5
-        movea.l d0,a1                   ;use ROM as varied data, start at 0
-        lea     8164(a1),a2      0x45e91fe4       ;cycle back when at address 8164
-        sf      mc_stat-ra_bot(a3)  0x51eb8063    ;display on, 4 colour, screen 0
+   190     movea.l a3,a5
+   192     movea.l d0,a1                   ;use ROM as varied data, start at 0
+   194     lea     8164(a1),a2      0x45e91fe4       ;cycle back when at address 8164
+   198     sf      mc_stat-ra_bot(a3)  0x51eb8063    ;display on, 4 colour, screen 0; @18063
 L019C   cmpa.l  a1,a2           0xb5c9        ;cycle point ?
         bne.s   L01A2           0x6602        ;no
         movea.l d0,a1        0x2240           ;reset to base of ROM
@@ -230,7 +308,7 @@ L01A2   move.l  (a1)+,d2     0x2419           ;get ROM data
         beq.s   L01C2     0x671a              ;yes
   1a8   move.l  d0,(a5)     0x2a80             ;write 0
         cmp.l   (a5),d0     0xb095            ;verify 0 ?
-        bne.s   L015C       0x66ae            ;ram failure pass 1
+  1ac      bne.s   L015C       0x66ae            ;ram failure pass 1
         move.l  d1,(a5)     0x2a81            ;write -1
         cmp.l   (a5),d1     0xb295            ;verify -1 ?
   1b2   bne.s   L015C       0x66a8            ;ram failure pass 1
@@ -241,9 +319,10 @@ L01A2   move.l  (a1)+,d2     0x2419           ;get ROM data
   1bc   bne.s   L019C       0x66de            ;no
   1be   lsl.w   #8,d7       0xe14f            ;green screen for second pass failure
         bra.s   L018A       0x60c8            ;now do pass 2
+
 L01C2   cmp.l   (a5),d2     0xb495            ;data still valid ?
         bne.s   L015C       0x6696            ;ram failure pass 2
-        clr.l   (a5)+       0x429d            ;clear ram as we go
+   1c6     clr.l   (a5)+       0x429d            ;clear ram as we go
         cmpa.l  a4,a5       0xbbcc            ;top of ram ?
   1ca   bne.s   L019C       0x66d0            ;no
 
@@ -261,9 +340,9 @@ L01DE
   1e2   move.b  #$08,mc_stat-pc_mctrl(a3)  0x7c1708004300     ;display on, 8 colour, screen#0
   1e8   sf      pc_tctrl-pc_mctrl(a3)     0xeb51bc26   ;net out high, serial mode by default
   1ec   move.l  #$061F0000,(a3)          0x1f060000    ;pc_mctrl / pc_tctrl / pc_trak1 / pc_trak2
-  1f2   move.b  #$1F,pc_intr-pc_mctrl(a3)    ;(as set above) interrupt register port
-  1f8   move.b  #$01,pc_ipcwr-pc_mctrl(a3)   ;condition IPC write port
-  1fe   move.b  #$C0,sv_pcint(a6)            ;(gap interrupt to be masked)
+  1f2   move.b  #$1F,pc_intr-pc_mctrl(a3)    ;(as set above) interrupt register port 	($18021)	pulisce tutti IRQ
+  1f8   move.b  #$01,pc_ipcwr-pc_mctrl(a3)   ;condition IPC write port	(ossia $18003)
+  1fe   move.b  #$C0,sv_pcint(a6)     0x7C1D 0xC000 0x3500      ;(gap interrupt to be masked)
   204   jsr     L2C50(pc)    0xba4e4a2a                ;turn off all microdrive motors
 
 ;Continue initialising system variables, setting up system tables.
@@ -285,8 +364,8 @@ L01DE
    236     addi.l  #32,d0     0x8006 0x0000 0x2000            ;minimum of 8
    23c     cmpi.w  #480,d0                 ;maximum of 120 job table entries
         bls.s   L0246
-        move.w  #480,d0
-L0246   bsr.s   L0250                   ;set sv_jbpnt, sv_jbbas and sv_jbtop
+   242     move.w  #480,d0				0x3C30, 0xE001
+L0246   bsr.s   L0250          0x0861         ;set sv_jbpnt, sv_jbbas and sv_jbtop
   248   mulu.w  #3,d0                   ;maximum 360 channel table entries
   24c   bsr.s   L0250                   ;set sv_chpnt, sv_chbas and sv_chtop
   24e   bra.s   L025C
@@ -382,7 +461,7 @@ L0324   bsr.s   L0336                   ;save trap level registers
 
 ;Trap #3 exception
 
-L032A   bsr.s   L0336                   ;save trap level registers
+L032A   bsr.s   L0336                   ;save trap level registers			trap3
         bra     L337C                   ;perform trap #3 operation
 
 ;Trap #4 exception
@@ -404,9 +483,9 @@ L0336   subq.w  #8,a7                   ;make space
 ;Interrupt level 2
 
 L0352   movem.l d7/a5-a6,-(a7)          ;preserve interrupt level registers
-        movea.l a7,a5                   ;stack recovery
-        movea.l #sv_base,a6             ;always during interrupt handlers
-        move.b  pc_intr,d7              ;get register setting from port
+   356     movea.l a7,a5                   ;stack recovery
+   358     movea.l #sv_base,a6             ;always during interrupt handlers
+   35e     move.b  pc_intr,d7              ;get register setting from port ($18021)
         lsr.b   #1,d7                   ;shift each interrupt bit into carry
         bcs     L2ABC                   ;microdrive gap interrupt
         lsr.b   #1,d7
@@ -425,10 +504,10 @@ L0352   movem.l d7/a5-a6,-(a7)          ;preserve interrupt level registers
         movea.l sv_i2lst(a6),a0
         jsr     L0A9E(pc)               ;go through handler list
         move.b  sv_pcint(a6),d7
-        ori.b   #pc.intre,d7            ;clear external interrupt
-        move.b  d7,pc_intr              ;interrupt register port
-        movem.l (a7)+,d0-d6/a0-a4
-L03A0   bra     L03B6
+   392     ori.b   #pc.intre,d7       0x0700  0x1000     ;clear external interrupt
+   396     move.b  d7,pc_intr         0xC713, 0x0100, 0x2180     ;interrupt register port
+   39c     movem.l (a7)+,d0-d6/a0-a4			0xDF4C, 0x7F1F, 
+L03A0   bra     L03B6							0x0060
 
 ;Return from trap, via scheduler if called in user mode
 
@@ -443,20 +522,20 @@ L03B6   movem.l (a7)+,d7/a5-a6          ;restore trap level registers
 ;Return current job ID or check validity of job ID given
 
 L03BC   tst.w   d1                      ;job ID given
-        bge.s   L03D8                   ;yes
-        move.l  sv_jbpnt(a6),d1         ;else get current job table entry
-        movea.l d1,a0
-        movea.l (a0),a0                 ;job header
-        sub.l   sv_jbbas(a6),d1
-        lsr.l   #2,d1                   ;job number
-        swap    d1
-        move.w  jb_tag(a0),d1           ;add its tag
-        swap    d1                      ;return job ID
+   3be     bge.s   L03D8                   ;yes
+   3c0     move.l  sv_jbpnt(a6),d1         ;else get current job table entry
+   3c4     movea.l d1,a0
+   3c6     movea.l (a0),a0                 ;job header
+   3ca     sub.l   sv_jbbas(a6),d1
+   3cc     lsr.l   #2,d1                   ;job number
+   3ce     swap    d1
+   3d0     move.w  jb_tag(a0),d1           ;add its tag
+   3d4     swap    d1                      ;return job ID
 L03D6   rts
 
 L03D8   bsr.s   L03E4                   ;verify job ID
         beq.s   L03D6                   ;job ID OK
-        moveq   #err.nj,d0              ;bad job
+        moveq   #err.nj,d0              ;bad job			0xFE70 -2
         addq.w  #$04,a7                 ;abort operation  [!] #$14
         dc.w    $6000    *** bra L03A6  ;return from trap
         dc.w    L03A6-*
@@ -510,7 +589,7 @@ L0448   move.b  sv_tmode(a6),pc_tctrl   ;transmit mode register to hardware port
 ;Prepare for serial transmit mode 
 
 L0452   bclr    #pc..serb,sv_tmode(a6)  ;set serial mode
-        ori.b   #pc.maskt,sv_pcint(a6)  ;enable transmit interrupts
+        ori.b   #pc.maskt,sv_pcint(a6)  ;enable transmit interrupts				0x80
         bra.s   L0448                   ;set pc_tctrl port
 
 ;Call routine for requested Trap #1 operation
@@ -544,7 +623,7 @@ L0472   dc.w    L04C2-L0460             ;$00 mt.inf
         dc.w    L076A-L0460             ;$0E mt.alres
         dc.w    L076A-L0460             ;$0F mt.reres
         dc.w    L07C2-L0460             ;$10 mt.dmode
-        dc.w    L0872-L0460             ;$11 mt.ipcom
+         dc.w    L0872-L0460             ;$11 mt.ipcom			 keyboard?
         dc.w    L0882-L0460             ;$12 mt.baud
         dc.w    L195A-L0460             ;$13 mt.rclck
         dc.w    L195A-L0460             ;$14 mt.sclck
@@ -567,7 +646,7 @@ L0472   dc.w    L04C2-L0460             ;$00 mt.inf
 
 ;Trap #1 D0=$03 or > $24, operation undefined
 
-L04BC   moveq   #err.bp,d0
+L04BC   moveq   #err.bp,d0							0xF170 241 -15
         bra     L03A6                   ;return from trap
 
 ;Trap #1 D0=$00 MT.INF - Get system information
@@ -971,17 +1050,17 @@ L088C   cmp.w   (a0)+,d1                    ;supported baud rate ?
 L0896   movem.l (a7)+,d2/d6/a0-a2
         bra     L03A6                       ;return from trap
 
-L089E   move.l  #1200,d0                    ;the slower the baud rate below 1200
+L089E   move.l  #1200,d0            0x3C20, 0x0000        ;the slower the baud rate below 1200
         divu.w  d1,d0                       ;the higher the timing value when
         addq.w  #1,d0                       ;(but a minimum of one)
         move.w  d0,sv_timov(a6)             ;waiting for serial output to complete
-        ori.w   #$0700,sr                   ;interrupts off
-        jsr     L2F6E(pc)                   ;assign IPC hardware registers
-        lea     sv_tmode(a6),a2             ;transmit mode register
-        andi.b  #$F8,(a2)                   ;mask out current baud setting
-        or.b    d2,(a2)                     ;new setting to system variable
-        move.b  (a2),pc_tctrl-pc_ipcwr(a1)  ;and then copy it to hardware port
-        moveq   #baud_cmd,d0                ;IPC command set baud rate
+   8ac     ori.w   #$0700,sr           0x7C00, 0x0007,         ;interrupts off
+   8b0     jsr     L2F6E(pc)                   ;assign IPC hardware registers
+   8b4     lea     sv_tmode(a6),a2             ;transmit mode register
+   8b8     andi.b  #$F8,(a2)                   ;mask out current baud setting
+   8bc     or.b    d2,(a2)                     ;new setting to system variable
+   8be     move.b  (a2),pc_tctrl-pc_ipcwr(a1)  ;and then copy it to hardware port
+   8c2     moveq   #baud_cmd,d0      0x0D70          ;IPC command set baud rate = 13 $0d
         jsr     L2F7C(pc)                   ;send d0.b to IPC
         move.b  d2,d0                       ;baud rate setting
         jsr     L2F7C(pc)                   ;send d0.b to IPC
@@ -1018,18 +1097,18 @@ L08FC   bra     L03A4                   ;return from trap err.ok
 L0900   addq.w  #1,sv_pollm(a6)         ;increment missed polls counter
         bvc.s   L090A                   ; < 32768 no overflow
         subq.w  #1,sv_pollm(a6)         ;ceiling is 32767
-L090A   movem.l d0-d6/a0-a4,-(a7)
-        moveq   #-sv_lpoll,d0           ;offset to linkage base
-        moveq   #1,d3                   ;this is a poll call
-        movea.l sv_plist(a6),a0         ;polled interrupt list
-        jsr     L0A9E(pc)               ;call each routine in list
-        movem.l (a7)+,d0-d6/a0-a4
-        move.b  sv_pcint(a6),d7         ;copy of interrupt register
-        ori.b   #pc.intrf,d7            ;clear frame interrupt
-        move.b  d7,pc_intr              ;write to hardware register port
-        btst    #5,trlv_sr(a7)          ;called in supervisor mode ?
-        bne     L03B6                   ;yes, skip scheduler list (poll missed)
-L0936   jsr     L09D4(pc)               ;save current job details
+L090A   movem.l d0-d6/a0-a4,-(a7)				0xE748, 0xF8FE
+   90e     moveq   #-sv_lpoll,d0      0xF870     ;offset to linkage base
+   910     moveq   #1,d3              0x0176     ;this is a poll call
+   912     movea.l sv_plist(a6),a0    0x6E20, 0x3C00     ;polled interrupt list
+   916     jsr     L0A9E(pc)          0xBA4E, 0x8601     ;call each routine in list
+   91a     movem.l (a7)+,d0-d6/a0-a4    0xDF4C, 0x7F1F
+   91e     move.b  sv_pcint(a6),d7      0x2E1E, 0x3500   ;copy of interrupt register
+   922     ori.b   #pc.intrf,d7       0x0700, 0x0800     ;clear frame interrupt scrivo 8
+   926     move.b  d7,pc_intr     0xC713, 0x0100, 0x2180         ;write to hardware register port   $18021
+   92c     btst    #5,trlv_sr(a7)    0x2F08, 0x0500, 0x0c00      ;called in supervisor mode ?
+   932     bne     L03B6             0x0066, 0x82FA      ;yes, skip scheduler list (poll missed)
+L0936   jsr     L09D4(pc)         0xBA4E, 0x9C00,      ;save current job details
 L093A   move.w  sv_pollm(a6),d3         ;accumulated/lost polls
         clr.w   sv_pollm(a6)            ;reset counter
         addq.w  #1,sv_rand(a6)          ;increment random number
@@ -1045,9 +1124,9 @@ L093A   move.w  sv_pollm(a6),d3         ;accumulated/lost polls
 ;Trap #1 D0=$08 MT.SUSJB - Suspend a job
 
 L0960   jsr     L03BC(pc)               ;check/get job ID & header (abort if bad)
-        move.w  d3,jb_stat(a0)          ;suspension timeout to job status
-        move.l  a1,jb_hold(a0)          ;zero this address on release
-        moveq   #err.ok,d0              ;operation complete
+   964     move.w  d3,jb_stat(a0)          ;suspension timeout to job status
+   968     move.l  a1,jb_hold(a0)          ;zero this address on release
+   96c     moveq   #err.ok,d0              ;operation complete
         dc.w    $6000    *** bra L0936  ;return via scheduler
         dc.w    L0936-*
 
@@ -1089,7 +1168,7 @@ L09A0   jsr     L03BC(pc)               ;check/get job ID & header (abort if bad
 L09CA   moveq   #err.ok,d0              ;operation complete
 L09CC   bra     L0936                   ;return via scheduler
 
-L09D0   moveq   #err.nc,d0              ;error, job is already active
+L09D0   moveq   #err.nc,d0              ;error, job is already active			0xFF70 ff -1
         bra.s   L09CC
 
 ;Save current job register set and if job was active reset its priority counter.
@@ -1219,9 +1298,9 @@ L0AFA   dc.b    ops1_cmd,0,0,0,0,0,1,0  ;IPC command open serial port 1
 L0B0A   dc.b    cls1_cmd,0,0,0,0,0,1,0  ; "     "    close serial port 1
         dc.b    cls2_cmd,0,0,0,0,0,1,0  ; "     "    close serial port 2
 
-L0B1A   moveq   #err.nf,d0              ;unsupported port number
+L0B1A   moveq   #err.nf,d0              ;unsupported port number			0xF970 249 -7
         bra.s   L0B20
-L0B1E   moveq   #err.iu,d0              ;serial port in use
+L0B1E   moveq   #err.iu,d0              ;serial port in use						0xF770 247 -9
 L0B20   addq.w  #8,a7                   ;discard parameters
         andi.w  #$F8FF,sr               ;interrupts on
         rts
@@ -1358,7 +1437,7 @@ L0C46   bchg    #7,d1                   ;invert odd parity to even
 L0C4A   bsr.s   L0C76                   ;generate even parity
 L0C4C   btst    #7,d1                   ;check parity
         beq.s   L0C54                   ;parity ok
-        moveq   #err.te,d0              ;else tranmission error
+        moveq   #err.te,d0              ;else tranmission error			0xF370 243 -13
 L0C54   tst.b   sv_tran(a6)             ;translate table active ?
         beq.s   L0C66                   ;no
         move.l  a3,-(a7)                ;preserve driver linkage
@@ -1477,11 +1556,11 @@ L0D36   dc.l    L1104                   ;next in list (NET)
 ;CON driver OPEN
 
 L0D46   suba.w  #10,a7                  ;make room
-        movea.l a7,a3                   ;for 5 parameters
-        jsr     L372C(pc)               ;io.name
-        bra.s   L0D9E                   ;not found, try SCR
-        bra.s   L0DC8                   ;err.bp
-        bra.s   L0D72                   ;OK
+   d4a     movea.l a7,a3                   ;for 5 parameters
+   d4c     jsr     L372C(pc)               ;io.name
+   d50     bra.s   L0D9E                   ;not found, try SCR
+   d52     bra.s   L0DC8                   ;err.bp
+   d54     bra.s   L0D72                   ;OK
 
         dc.w    3                       ;device name string
         dc.b    'CON',0
@@ -1500,18 +1579,18 @@ L0D46   suba.w  #10,a7                  ;make room
 ;Set up a CON channel
 
 L0D72   moveq   #sd_kbd+q_queue+2,d1    ;length of minimum CON definition
-        add.w   8(a7),d1                ;add length of keyboard buffer
-        bsr.s   L0DCE                   ;set up channel definition
-        bne.s   L0DC8                   ;return any error
-        lea     sd_kbd(a0),a2           ;keyboard queue header
-        subi.w  #sd_kbd+q_queue,d1      ;length of queue
-        jsr     L37F4(pc)               ;io.qset, set up a queue
-        movea.l sv_keyq(a6),a3          ;current keyboard queue
+   d74     add.w   8(a7),d1                ;add length of keyboard buffer
+   d78     bsr.s   L0DCE                   ;set up channel definition   qua crea la window, ok
+   d7a     bne.s   L0DC8                   ;return any error
+   d7c     lea     sd_kbd(a0),a2           ;keyboard queue header
+   d80     subi.w  #sd_kbd+q_queue,d1      ;length of queue
+   d84     jsr     L37F4(pc)               ;io.qset, set up a queue
+   d88     movea.l sv_keyq(a6),a3          ;current keyboard queue
         move.l  a3,d3                   ;is there one ?
-        bne.s   L0D98                   ;yes
-        move.l  a2,(a2)                 ;else q_qnext points to itself
-        move.l  a2,sv_keyq(a6)          ;set as current keyboard queue
-        bra.s   L0DC6                   ;operation complete
+   d8e     bne.s   L0D98                   ;yes
+   d90     move.l  a2,(a2)                 ;else q_qnext points to itself
+   d92     move.l  a2,sv_keyq(a6)          ;set as current keyboard queue
+   d96     bra.s   L0DC6                   ;operation complete
 
 ;Link new keyboard queue into current list.
 
@@ -1551,9 +1630,9 @@ L0DC8   adda.w  #10,a7                  ;discard parameters
 ;Common CON/SCR set up channel definition
 
 L0DCE   jsr     L2FAE(pc)               ;mm_alchp
-        bne.s   L0E38                   ;no memory for channel definition
-        move.w  d1,-(a7)                ;preserve bytes allocated
-        lea     sd_xinc(a0),a2          ;initial cursor size
+   dd2     bne.s   L0E38                   ;no memory for channel definition
+   dd4     move.w  d1,-(a7)                ;preserve bytes allocated
+   dd6     lea     sd_xinc(a0),a2          ;initial cursor size
         move.l  #$0006000A,(a2)+        ;is 6 by 10 pixels
         move.l  #MAD9A,(a2)+            ;sd_font, table 1 of character fonts
         move.l  #MB106,(a2)+            ;         table 2 of character fonts
@@ -1567,17 +1646,18 @@ L0DCE   jsr     L2FAE(pc)               ;mm_alchp
         btst    #mc..m256,sv_mcsta(a6)  ;current mode setting ?
         beq.s   L0E20                   ;is mode 4
         addq.w  #6,sd_xinc(a0)          ;else mode 8 cursor is twice as wide
-        bset    #sd..dbwd,sd_cattr(a0)  ;and so are characters
-L0E20   moveq   #0,d2                   ;initial border has no width
-        lea     6(a7),a1                ;here are the parameters to
-        jsr     L1AB6(pc)               ;sd.wdef, redfine window
-        move.w  (a7)+,d1                ;restore bytes allocated
-        tst.l   d0                      ;any error from sd.wdef ?
-        beq.s   L0E38                   ;no, return
+        bset    #sd..dbwd,sd_cattr(a0)			 0xE808, 0x0600,  0x4200		;and so are characters
+L0E20   moveq   #0,d2           0x0074        ;initial border has no width
+   e22     lea     6(a7),a1                ;here are the parameters to
+   e26     jsr     L1AB6(pc)               ;sd.wdef, redefine window
+   e2a     move.w  (a7)+,d1                ;restore bytes allocated
+   e2c     tst.l   d0                      ;any error from sd.wdef ?
+   e2e     beq.s   L0E38                   ;no, return
         move.l  d0,-(a7)                ;else preserve error
         jsr     L305E(pc)               ;mm_rechp, reclaim channel definition
         move.l  (a7)+,d0                ;restore error setting CCR
 L0E38   rts
+*************** WINDOW
 
 ;CON/SCR driver CLOSE
 
@@ -1612,7 +1692,7 @@ L0E70   jsr     L305E(pc)               ;mm_rechp, reclaim channel definition
 
 L0E76   tst.b   sv_scrst(a6)            ;screen status ?
         beq.s   L0E80                   ;is active
-        moveq   #err.nc,d0              ;else operation frozen out for now
+        moveq   #err.nc,d0              ;else operation frozen out for now		0xFF70 ff -1
         rts
 
 L0E80   cmpi.b  #io.sstrg,d0            ;IO operation ?
@@ -1659,7 +1739,7 @@ L0EC4   movea.l a5,a2                   ;keyboard queue of channel
 L0ECA   moveq   #err.ok,d0
 L0ECC   cmp.w   d4,d5                   ;fetch complete ?
         bls.s   L0EEE                   ;yes
-        movea.l a5,a2                   ;keyboard queue of channel
+   ed0     movea.l a5,a2                   ;keyboard queue of channel
         jsr     L385E(pc)               ;io.qout, read a byte from queue
         blt.s   L0EEE                   ;abort if error
         move.b  d1,(a4)+                ;byte to buffer
@@ -1670,10 +1750,10 @@ L0ECC   cmp.w   d4,d5                   ;fetch complete ?
 
 L0EDE   moveq   #err.ok,d0
         cmp.w   d4,d5                   ;send complete ?
-        bls.s   L0EEE                   ;yes
-        move.b  (a4)+,d1                ;get byte from buffer
-        bsr.s   L0F00                   ;io.sbyte send byte to window
-        addq.w  #1,d4                   ;increment byte counter
+   ee2     bls.s   L0EEE                   ;yes
+   ee4     move.b  (a4)+,d1                ;get byte from buffer
+   ee6     bsr.s   L0F00                   ;io.sbyte send byte to window
+   ee8     addq.w  #1,d4                   ;increment byte counter
         bra.s   L0EDE                   ;continue until done
 
 L0EEC   moveq   #err.bp,d0              ;invalid operation
@@ -1684,6 +1764,10 @@ L0EEE   move.w  d4,d1                   ;bytes sent/fetched
 
 L0EFA   moveq   #io.sbyte,d0            ;send a byte to window
 L0EFC   jmp     L1992(pc)               ;perform screen operation
+
+****** PRINT BYTE
+
+
 
 ;CON/SCR Trap #3 D0=$05 IO.SBYTE - Send a byte
 
@@ -1778,7 +1862,7 @@ L0FBE   dbf     d0,L0FB8                ;until end of line
         bsr     L10CE                   ;print rest of (shifted) line
         cmp.w   d4,d5                   ;within buffer length ?
         bhi.s   L0F88                   ;yes, get next key/character
-        moveq   #err.bo,d0              ;else buffer overflow
+        moveq   #err.bo,d0              ;else buffer overflow			0xFB70 251 -5
         bra.s   L1022                   ;return from operation
 
 ;Action key pressed.
@@ -2273,7 +2357,7 @@ L13BE   moveq   #err.ro,d0              ;read only error
 
 L13C2   tst.b   md_estat(a2)            ;error status ?
         bge.s   L13CC                   ;none or 'open pending'
-L13C8   moveq   #err.fe,d0              ;return file error
+L13C8   moveq   #err.fe,d0              ;return file error				0xEC70 236 -20
         rts
 
 L13CC   move.l  fs_filnr(a0),d5         ;file number / block
@@ -2283,7 +2367,7 @@ L13CC   move.l  fs_filnr(a0),d5         ;file number / block
         bgt.s   L13E0                   ;exceeded
         tst.b   d3                      ;else is it a send operation ?
         blt.s   L13E4                   ;yes
-L13E0   moveq   #err.ef,d0              ;return end of file
+L13E0   moveq   #err.ef,d0              ;return end of file				0xf670 246 -10
 L13E2   rts
 
 L13E4   tst.w   d4                      ;at end of block ?
@@ -2516,7 +2600,7 @@ L15DA   jsr     L159E(pc)                         ;find free slave block (d5.l=0
         adda.l  a6,a4                             ;pointer to memory block
         jsr     L29FC(pc)                         ;do MDV slaving
         lea     pc_mctrl,a3                       ;microdrive control port
-        andi.b  #$DF,sv_pcint(a6)                 ;disable gap interrupts
+        andi.b  #$DF,sv_pcint(a6)                 ;disable gap interrupts				0x20
         move.b  sv_pcint(a6),pc_intr-pc_mctrl(a3) ;write new setting to hardware port
         lsl.l   #8,d0                             ;(momentarily wait)
         cmp.b   sv_mdrun(a6),d1                   ;required drive turning ?
@@ -2612,7 +2696,7 @@ L16F0   tst.l   (a5)+                   ;any bit flags still set ?
 L16FC   addq.b  #1,md_fail(a2)          ;increment failure counter
         cmpi.b  #8,md_fail(a2)          ;expired ?
         blt     L1656                   ;no, get next header
-L170A   moveq   #err.fe,d0              ;file error
+L170A   moveq   #err.fe,d0              ;file error			0xF070	240 -16
 L170C   movem.l (a7)+,a0-a2/a4
         sf      md_fail(a2)             ;clear failure counter
         moveq   #0,d7
@@ -2621,7 +2705,7 @@ L170C   movem.l (a7)+,a0-a2/a4
         add.l   d7,d7                   ;x 2 (= 512 byte sectors)
         adda.l  d7,a1                   ;offset buffer pointer
         adda.w  fs_ebyte(a0),a1         ;to very end of file within buffer
-L1724   ori.b   #pc.maskg,sv_pcint(a6)  ;enable gap interrupts
+L1724   ori.b   #pc.maskg,sv_pcint(a6)  0x2E00, 0x2000		;enable gap interrupts   = 0x20
         andi.w  #$F8FF,sr               ;interrupts on
         rts
 
@@ -2888,35 +2972,35 @@ L198E   bra     L03A4                   ;return from trap err.ok
 
 L1992   move.b  sd_curf(a0),-(a7)       ;cursor status ?
         ble.s   L19A4                   ;invisible or suppressed
-        movem.w d0-d2,-(a7)
+        movem.w d0-d2,-(a7)				
         jsr     L1BA2(pc)               ;invert the visible cursor
-        movem.w (a7)+,d0-d2
-L19A4   cmpi.b  #io.sbyte,d0            ;indirect send byte call ?
+        movem.w (a7)+,d0-d2				0x9F4C, 0x0700
+L19A4   cmpi.b  #io.sbyte,d0     0x000C       ;indirect send byte call ?
         bne.s   L19B0                   ;no, SD or FS operation only
         jsr     L1A4C(pc)               ;send byte to window
         bra.s   L19CE
 
-L19B0   cmpi.w  #sd.gcur,d0             ;any higher than $36 (FS)
+L19B0   cmpi.w  #sd.gcur,d0        0x400C, 0x3600      ;any higher than $36 (FS)
         bhi.s   L19EE                   ;is bad operation code
-        cmpi.w  #sd.extop,d0            ;any lower than $09
-        blt.s   L19EE                   ;is bad operation code
-        bgt.s   L19C2                   ;do SD operation
-        jsr     (a2)                    ;else call user routine
+   19b6     cmpi.w  #sd.extop,d0            ;any lower than $09
+   19ba     blt.s   L19EE                   ;is bad operation code
+   19bc     bgt.s   L19C2                   ;do SD operation
+   19be     jsr     (a2)                    ;else call user routine
         bra.s   L19CE
 
 L19C2   add.b   d0,d0                   ;operation code forms offset
         movea.w L19F2-$14(pc,d0.w),a3   ;to offset to required routine
-        lsr.l   #1,d0                   ;restore operation code value
+   19c8    lsr.l   #1,d0                   ;restore operation code value
         jsr     L1992(pc,a3.w)          ;and call operation routine
 L19CE   tst.b   (a7)+                   ;previous cursor status ?
-        ble.s   L19E8                   ;was invisible or supressed so return
-        tst.l   d0                      ;else was there an error in operation ?
-        bne.s   L19E8                   ;yes, return
-        tst.b   sd_curf(a0)             ;present cursor status ?
-        bge.s   L19E8                   ;visible or suppressed, return
-        movem.l d0-d2,-(a7)
-        jsr     L1B86(pc)               ;sd.cure, reenable the cursor
-        movem.l (a7)+,d0-d2
+   19d0     ble.s   L19E8                   ;was invisible or supressed so return
+   19d2     tst.l   d0                      ;else was there an error in operation ?
+   19d4     bne.s   L19E8                   ;yes, return
+   19d6     tst.b   sd_curf(a0)             ;present cursor status ?
+   19da     bge.s   L19E8                   ;visible or suppressed, return
+   19dc     movem.l d0-d2,-(a7)
+   19e0     jsr     L1B86(pc)               ;sd.cure, reenable the cursor
+   19e4     movem.l (a7)+,d0-d2
 L19E8   tst.l   d0                      ;error code from operation
         rts
 
@@ -2931,7 +3015,7 @@ L19EE   moveq   #err.bp,d0              ;unsupported operation
 L19F2   dc.w    L1A78-L1992             ;$0A sd.pxenq
         dc.w    L1A8A-L1992             ;$0B sd.chenq
         dc.w    L1AF8-L1992             ;$0C sd.bordr
-        dc.w    L1AB6-L1992             ;$0D sd.wdef
+         dc.w    L1AB6-L1992             ;$0D sd.wdef
         dc.w    L1B86-L1992             ;$0E sd.cure
         dc.w    L1B94-L1992             ;$0F sd.curs
         dc.w    L1C22-L1992             ;$10 sd.pos
@@ -3024,29 +3108,29 @@ L1AAA   moveq   #0,d1                   ;(long divide)
 
 ;CON/SCR Trap #3 D0=$0D SD.WDEF - Redefine window
 
-L1AB6   movem.w d1-d4,-(a7)
-        jsr     L1C1C(pc)               ;reset cursor and newline status
-        movem.w (a1),d0-d3              ;window width, depth, x/y position 
-        exg     d0,d2
-        exg     d1,d3
-        moveq   #0,d4
+L1AB6   movem.w d1-d4,-(a7)					0xA748 0x0078
+   1aba     jsr     L1C1C(pc)       0xBA4E, 0x6001        ;reset cursor and newline status
+   1abe     movem.w (a1),d0-d3     0x914C 0xf000        ;window width, depth, x/y position 
+   1ac2     exg     d0,d2					0x42C1        c142
+   1ac4     exg     d1,d3							0x43C3    c343
+        moveq   #0,d4							0x0078
         bclr    d4,d0                   ;make even window x position
         bclr    d4,d2                   ;make even window width
         tst.w   d2                      ;any width ?
-        beq     L1B64                   ;no, return out of range
-        tst.w   d3                      ;any depth ?
-        beq     L1B64                   ;no, return out of range
+   1acc     beq     L1B64                   ;no, return out of range
+   1ad2     tst.w   d3                      ;any depth ?
+   1ad4     beq     L1B64                   ;no, return out of range
         move.w  d0,d4                   ;x position
         add.w   d2,d4                   ;plus width
         bcs     L1B64                   ; > 65535 is out of range
-        cmpi.w  #hw_xpix,d4             ;hardware limit exceeded ?
-        bhi.s   L1B64                   ;yes, return out of range
-        move.w  d1,d4                   ;y position
-        add.w   d3,d4                   ;plus depth
-        bcs.s   L1B64                   ; > 65535 is out of range
+   1ae0    cmpi.w  #hw_xpix,d4             ;hardware limit exceeded ?				512
+   1ae2     bhi.s   L1B64                   ;yes, return out of range
+   1ae6     move.w  d1,d4                   ;y position
+   1ae8     add.w   d3,d4                   ;plus depth
+   1aea     bcs.s   L1B64                   ; > 65535 is out of range			256
         cmpi.w  #hw_ypix,d4             ;hardware limit exceeded ?
         bhi.s   L1B64                   ;yes, return out of range
-        clr.w   sd_borwd(a0)            ;zero border width
+   1af2     clr.w   sd_borwd(a0)            ;zero border width
         bra.s   L1B12
 
 ;CON/SCR Trap #3 D0=$0C SD.BORDR - Set window border
@@ -3054,25 +3138,25 @@ L1AB6   movem.w d1-d4,-(a7)
 L1AF8   move.b  d1,sd_bcolr(a0)         ;border colour byte
 L1AFC   movem.w d1-d4,-(a7)
         cmp.w   sd_borwd(a0),d2         ;border width
-        beq.s   L1B0A                   ;is zero
+   1b04     beq.s   L1B0A                   ;is zero
         jsr     L1C1C(pc)               ;reset cursor and newline status
 L1B0A   movem.w sd_xmin(a0),d0-d4       ;window position, size and border width
         bsr.s   L1B6C                   ;remove border from window
 L1B12   move.w  2(a7),d4                ;requested border width
-        cmpi.w  #hw_ypix,d4             ;too big ? [!]
+   1b16     cmpi.w  #hw_ypix,d4             ;too big ? [!]				256
         bhi.s   L1B64                   ;yes, return out of range
-        bsr.s   L1B6E                   ;add border to window
+   1b1c     bsr.s   L1B6E                   ;add border to window
         movem.w d0-d4,sd_xmin(a0)       ;update window position, size and border width
-        beq.s   L1B60                   ;border width was zero
+   1b24     beq.s   L1B60                   ;border width was zero
         move.w  (a7),d1                 ;border colour
-        cmpi.b  #$80,d1                 ;transparent ?
-        beq.s   L1B60                   ;yes, done
-        movea.l a7,a1                   ;temporary buffer to contain
-        jsr     L27D8(pc)               ;get colour mask for colour d1.b
-        move.w  sd_ymin(a0),d1          ;restore window y position
-        bsr.s   L1B6C                   ;remove border from window (registers only)
-        neg.w   d4                      ;restore positive border width
-        exg     d4,d3                   ;respecify depth as border width to
+   1b28     cmpi.b  #$80,d1                 ;transparent ?
+   1b2c     beq.s   L1B60                   ;yes, done
+   1b2e     movea.l a7,a1                   ;temporary buffer to contain
+   1b30     jsr     L27D8(pc)               ;get colour mask for colour d1.b
+   1b34     move.w  sd_ymin(a0),d1          ;restore window y position
+   1b38     bsr.s   L1B6C                   ;remove border from window (registers only)
+   1b3a     neg.w   d4                      ;restore positive border width
+   1b3c     exg     d4,d3                   ;respecify depth as border width to
         jsr     L25BE(pc)               ;draw top block
         add.w   d4,d1                   ;offset y position by window depth
         sub.w   d3,d1                   ;then subtract border width to
@@ -3089,7 +3173,7 @@ L1B12   move.w  2(a7),d4                ;requested border width
 L1B60   moveq   #err.ok,d0              ;operation complete
         bra.s   L1B66
 
-L1B64   moveq   #err.or,d0              ;out of range
+L1B64   moveq   #err.or,d0       0xFC70       ;out of range  = fc = -4
 L1B66   movem.w (a7)+,d1-d4
         rts
 
@@ -3099,11 +3183,11 @@ L1B6C   neg.w   d4                      ;border to be removed
 L1B6E   add.w   d4,d1                   ;update y position
         add.w   d4,d4                   ;twice for
         sub.w   d4,d3                   ;update window depth
-        ble.s   L1B82                   ;bad window size
+   1b74     ble.s   L1B82                   ;bad window size
         add.w   d4,d0                   ;update x position
         add.w   d4,d4                   ;twice again for
         sub.w   d4,d2                   ;update window width
-        ble.s   L1B82                   ;bad window width
+   1b7c     ble.s   L1B82                   ;bad window width
         asr.w   #2,d4                   ;redress border width
         rts
 
@@ -4362,12 +4446,12 @@ L25F4   bsr     L26E6                   ;draw block
 
 L25FE   movem.l d0-d7/a0-a6,-(a7)
         bsr     L2558                   ;set up registers
-        move.w  18(a7),d2               ;scroll distance
-        neg.w   d2                      ;make negative for downwards
-        lsl.w   #hw_scrlb,d2            ;greater/equal to screen depth ?
-        bvs.s   L25C4                   ;yes, so just draw whole block
-        bgt.s   L2630                   ;direction is upwards
-        exg     a2,a1                   ;top is bottom and vice versa
+        move.w  18(a7),d2           0x2F34, 0x1200     ;scroll distance
+        neg.w   d2                 0x4244     ;make negative for downwards
+        lsl.w   #hw_scrlb,d2      0x4AEF      ;greater/equal to screen depth?  NON SEMBRA TOCCARE OVF... solo ASL lo farebbe...
+        bvs.s   L25C4             0xB469      ;yes, so just draw whole block
+        bgt.s   L2630             0x1E6E      ;direction is upwards
+        exg     a2,a1             0x49C5      ;top is bottom and vice versa			c549
         movea.w #-hw_scrll,a3           ;work backwards
         adda.l  a3,a1                   ;point to actual bottom line
         adda.l  a3,a2                   ;point to line past top
@@ -4375,7 +4459,7 @@ L25FE   movem.l d0-d7/a0-a6,-(a7)
         sub.w   a2,d0                   ;block depth in bytes
         tst.b   d0                      ;odd number of lines ? [d]
         bne.s   L2626                   ;yes
-        exg     d6,d7                   ;swap masks
+        exg     d6,d7           0x47CD        ;swap masks    cd47
 L2626   lea     0(a1,d2.w),a4           ;pointer to line displaced downwards
         cmpa.l  a2,a4                   ;is it higher than top of block ?
         bls.s   L25C4                   ;yes, so just draw whole block
@@ -4416,7 +4500,7 @@ L2648   movem.l d0-d7/a0-a6,-(a7)
         move.l  a5,d2                   ;bytes in a block line
         neg.l   d2                      ;to be
         movea.l d2,a5                   ;negative
-        exg     d4,d5                   ;swap edge masks
+        exg     d4,d5          0x45C9         ;swap edge masks   c945
         bra.s   L26AC
 
 L268A   movea.w #4,a0                   ;work from left to right
@@ -4439,7 +4523,7 @@ L26AC   addq.w  #1,d3                   ;pan width in long words
 
 L26B6   move.w  d3,d0                   ;block width in long words
         bmi.s   L26EA                   ;none
-        exg     d6,d7                   ;swap odd/even line masks
+        exg     d6,d7           0x47CD        ;swap odd/even line masks   cd47
         move.l  (a1),-(a7)              ;preserve lefthand and
         move.l  0(a1,a5.w),-(a7)        ;righthand long words
         jmp     (a6)                    ;perform block operation
@@ -4625,7 +4709,7 @@ L2838   lsr.w   #1,d2                   ;0000000G 0000000R
 L283E   rts
 
 ;Print d2.b to screen at position x/y d0-d1.w (d3.b sd.cattr, a1 sd.smask, a2-3 font)
-
+********************** PRINT CHAR
 L2840   movem.l d0-d7/a0-a6,-(a7)
         movem.l (a1),d6-d7              ;strip/ink masks
         btst    #0,d1                   ;y position on odd line ?
@@ -4795,7 +4879,7 @@ L2A00   moveq   #0,d1
         move.b  #$FA,sv_mdcnt(a6)               ;-6 to gap counter
         lea     pc_mctrl,a3                     ;microdrive control port
         jsr     L2C56(pc)                       ;turn on MDV motor d1.b
-        ori.b   #pc.maskg,sv_pcint(a6)          ;enable gap interrupts
+        ori.b   #pc.maskg,sv_pcint(a6)          ;enable gap interrupts				0x20
         move.b  sv_pcint(a6),pc_intr            ;copy interrupt register to port
 L2A38   rts                                     ;return (wait for gap interrupt)
 
@@ -4923,9 +5007,9 @@ L2B7E   moveq   #bt.updt,d0                     ;status to be 'awaiting write'
 
 L2B82   addq.w  #4,a7                              ;discard pointer to FS definition
 L2B84   adda.w  #20,a7                             ;discard stacked registers/buffer
-L2B88   move.b  sv_pcint(a6),d7                    ;interrupt register setting
-        ori.b   #pc.intrg,d7                       ;clear gap interrupt
-        andi.b  #$DF,d7                            ;disable gap interrupts
+L2B88   move.b  sv_pcint(a6),d7           0x2E1E, 0x3500,         ;interrupt register setting
+        ori.b   #pc.intrg,d7              0x0700, 0x0100         ;clear gap interrupt  =1
+        andi.b  #$DF,d7                   0x0702, 0xDF00         ;disable gap interrupts  = 0x20
         move.b  d7,pc_intr-pc_mctrl(a3)            ;write to hardware port, then
         move.b  sv_pcint(a6),pc_intr-pc_mctrl(a3)  ;restore previous setting
         movem.l (a7)+,d0-d6/a0-a4
@@ -5056,10 +5140,10 @@ L2CC8   jmp     L2F7C(pc)               ;send d0.b to IPC
 
 ;Interface interrupt handler
 
-L2CCC   movem.l d0-d6/a0-a4,-(a7)
-        moveq   #0,d3                   ;this is not a poll call (so no polls missed!)
-        bsr.s   L2D20                   ;perform interface tasks
-        moveq   #pc.intri,d7            ;interface interrupt to be cleared
+L2CCC   movem.l d0-d6/a0-a4,-(a7)        0xE748, 0xF8FE, 
+   2cd0     moveq   #0,d3           0x0076        ;this is not a poll call (so no polls missed!)
+   2cd2     bsr.s   L2D20           0x4C61        ;perform interface tasks
+   2cd4     moveq   #pc.intri,d7    0x027E        ;interface interrupt to be cleared = 2
         bra.s   L2CE6                   ;return from interrupt
 
 ;Transmit interrupt handler
@@ -5067,11 +5151,11 @@ L2CCC   movem.l d0-d6/a0-a4,-(a7)
 L2CD8   movem.l d0-d6/a0-a4,-(a7)
         moveq   #0,d3                   ;this is not a poll call
         st      d4                      ;flag call is from interrupt
-        bsr     L2D74                   ;service any pending serial transmission
-        moveq   #pc.intrt,d7            ;clear transmit interrupt
-L2CE6   or.b    sv_pcint(a6),d7         ;add interrupt enable mask bit
-        move.b  d7,pc_intr              ;and write it to hardware register port
-        movem.l (a7)+,d0-d6/a0-a4
+   2ce2     bsr     L2D74                   ;service any pending serial transmission
+   2ce4     moveq   #pc.intrt,d7     0x047E       ;clear transmit interrupt
+L2CE6   or.b    sv_pcint(a6),d7      0x2E8E 0x3500   ;add interrupt enable mask bit TROVARE!!
+   2cea     move.b  d7,pc_intr         0xC713 0x0100  0x2180     ;and write it to hardware register port =18021
+        movem.l (a7)+,d0-d6/a0-a4      0xDF4C 0x7F1F,
         bra     L03B6                   ;restore interrupt level registers and rte
 
 ;First linkage in list of internal polled tasks.
@@ -5098,10 +5182,10 @@ L2D14   move.w  sr,-(a7)                ;(rte used in place of rts)
 ;Perform IPC interface tasks (read status, keyboard and any serial input).
 
 L2D20   jsr     L2F6E(pc)               ;assign IPC hardware registers
-        moveq   #stat_cmd,d0            ;IPC command report input status
-        jsr     L2F7C(pc)               ;send d0.b to IPC
-        jsr     L2F9A(pc)               ;get 8 bit reply from IPC into d1.b
-        move.b  d1,d7                   ;(preserve status during any routine)
+   2d24     moveq   #stat_cmd,d0   0x0170         ;IPC command report input status = 1
+   2d26     jsr     L2F7C(pc)               ;send d0.b to IPC
+   2d2a     jsr     L2F9A(pc)               ;get 8 bit reply from IPC into d1.b
+   2d2c     move.b  d1,d7                   ;(preserve status during any routine)
         btst    #6,d7                   ;IPC input P2.6 ? (unused MDV write protect)
         seq     sv_wp(a6)               ;set system variable accordingly
         btst    #1,d7                   ;sound being produced ?
@@ -5114,14 +5198,14 @@ L2D4A   move.l  sv_ser1c(a6),d0         ;SER1 receive queue ?
         btst    #4,d7                   ;IPC SER1 still open ?
         beq.s   L2D5E                   ;no
         movea.l d0,a2                   ;input queue location
-        moveq   #rds1_cmd,d5            ;IPC command read SER1
-        jsr     L2E18(pc)               ;fetch any bytes and put in queue
+        moveq   #rds1_cmd,d5    0x067A        ;IPC command read SER1 = 6
+   2d5a     jsr     L2E18(pc)     0xBA4E, 0xBC00          ;fetch any bytes and put in queue
 L2D5E   move.l  sv_ser2c(a6),d0         ;SER2 receive queue
         beq.s   L2D72                   ;there isn't one
         btst    #5,d7                   ;IPC SER2 still open ?
         beq.s   L2D72                   ;no
         movea.l d0,a2                   ;input queue location
-        moveq   #rds2_cmd,d5            ;IPC command read SER2
+        moveq   #rds2_cmd,d5     x077A       ;IPC command read SER2 = 7
         jsr     L2E18(pc)               ;fetch any bytes and put in queue
 L2D72   rts
 
@@ -5214,16 +5298,16 @@ L2E56   rts
 ;Deal with any keyboard input from IPC.
 
 L2E58   movea.l sv_keyq(a6),a2              ;current keyboard queue
-        move.l  a2,d0                       ;if none then
-        beq.s   L2EC0                       ;ignore keyboard until required
-        moveq   #rdkb_cmd,d0                ;IPC command read keyboard
-        jsr     L2F7C(pc)                   ;send d0.b to IPC
-        jsr     L2F96(pc)                   ;get 4 bit reply from IPC into d1.b
-        move.b  d1,d5                       ;(b3=repeat key, b2-0 number of keys)
-        move.b  d1,d4                       ;key counter
-        andi.w  #$0007,d4                   ;mask out number of keys buffered
-        beq.s   L2E96                       ;none
-        subq.w  #1,d4                       ;(adjust for dbra)
+   2e5c     move.l  a2,d0                       ;if none then
+   2e5e     beq.s   L2EC0                       ;ignore keyboard until required
+   2e60     moveq   #rdkb_cmd,d0     0x0870           ;IPC command read keyboard = 8
+   2e62     jsr     L2F7C(pc)                   ;send d0.b to IPC
+   2e66     jsr     L2F96(pc)                   ;get 4 bit reply from IPC into d1.b
+   2e6a     move.b  d1,d5                       ;(b3=repeat key, b2-0 number of keys)
+   2e6c     move.b  d1,d4                       ;key counter
+   2e6e     andi.w  #$0007,d4                   ;mask out number of keys buffered
+   2e72     beq.s   L2E96                       ;none
+   2e74     subq.w  #1,d4                       ;(adjust for dbra)
 L2E76   clr.w   sv_arbuf(a6)                ;clear last key pressed
         jsr     L2F96(pc)                   ;get 4 bit reply from IPC into d1.b
         move.b  d1,d2                       ;(b4=overflow, b2=SHIFT, b1=CTRL, b0=ALT)
@@ -5328,13 +5412,13 @@ L2F6E   lea     pc_ipcwr,a1                     ;IPC write port
 L2F7C   lsl.b   #4,d0                   ;left align data nibble
         ori.b   #$08,d0                 ;bit acts as end-stop
 L2F82   lsl.b   #1,d0                   ;data bit to eXtend bit
-        beq.s   L2F94                   ;done
-        moveq   #$03,d1                 ;magic number
-        roxl.b  #1,d1                   ;eXtend bit to b0
-        asl.b   #1,d1                   ;(why not roxl.b #2,d1 ?)
-        move.b  d1,(a1)                 ;data 1=$0E or 0=$0C
-L2F8E   btst    d6,(a0)                 ;handshake ?
-        bne.s   L2F8E                   ;wait for acknowledgment
+   2f84     beq.s   L2F94                   ;done
+   2f86     moveq   #$03,d1                 ;magic number
+   2f88     roxl.b  #1,d1       0xe311            ;eXtend bit to b0
+   2f8a     asl.b   #1,d1                   ;(why not roxl.b #2,d1 ?)
+   2f8c     move.b  d1,(a1)                 ;data 1=$0E or 0=$0C			write IPC ($18003)  (no! scrive 0x0c per video irq)
+L2F8E   btst    d6,(a0)       0x100D           ;handshake ?
+        bne.s   L2F8E         0xFC66          ;wait for acknowledgment
         bra.s   L2F82                   ;next bit
 L2F94   rts
 
@@ -5345,12 +5429,12 @@ L2F96   moveq   #$10,d1                 ;4 bit reply (end-stop bit)
 L2F9A   moveq   #$01,d1                 ;8 bit reply (end-stop bit)
 L2F9C   move.b  #$0E,(a1)               ;magic number
 L2FA0   btst    d6,(a0)                 ;handshake ?
-        bne.s   L2FA0                   ;wait for acknowledgment
-        move.b  (a0),d0                 ;read port, data is bit 7
-        roxl.b  #1,d0                   ;data bit reply to eXtend bit
-        roxl.b  #1,d1                   ;accumulate reply
-        bcc.s   L2F9C                   ;next bit
-        rts
+   2fa2     bne.s   L2FA0                   ;wait for acknowledgment
+   2fa4     move.b  (a0),d0                 ;read port, data is bit 7
+   2fa6     roxl.b  #1,d0                   ;data bit reply to eXtend bit
+   2fa8     roxl.b  #1,d1                   ;accumulate reply
+   2faa     bcc.s   L2F9C                   ;next bit
+   2fac     rts
 
 ;Vector $C0 MM_ALCHP - Allocate common heap
 
@@ -5511,15 +5595,15 @@ L3106   moveq   #0,d0                   ;first in list
         cmp.l   d1,d2
         beq.s   L3122
         bgt.s   L3116
-        moveq   #err.om,d0
+        moveq   #err.om,d0				0xFD70		253 -3
         rts
 
 L3116   add.l   d1,4(a1)
         movea.l a0,a1
         adda.l  d1,a1
         sub.l   d1,d3
-        move.l  d3,(a1)
-L3122   move.l  4(a0),d2
+        move.l  d3,(a1)				28f6d
+L3122   move.l  4(a0),d2			28ebe
         beq.s   L312C
         add.l   a0,d2
         sub.l   a1,d2
@@ -5540,7 +5624,7 @@ L312C   move.l  d2,4(a1)
 L3134   subq.w  #hp_next,a0             ;pointer to start of block (hp_len)
         add.l   d2,d1                   ;round up requested amount
         not.b   d2                      ;by adding and masking using
-        and.b   d2,d1                   ;the supplied minimum multiple-1
+   313a     and.b   d2,d1                   ;the supplied minimum multiple-1
         moveq   #0,d2                   ;size of largest suitable block found
         movea.l d2,a2
 L3140   movea.l a0,a1                   ;pointer to block before prospective block
@@ -5737,52 +5821,52 @@ L32B4   subq.b  #1,d0
 ;Trap #2 D0=$01 IO.OPEN - Open a channel
 
 L32D0   movem.l a1-a4,-(a7)             ;(if job ID bad then stack abused) [!]
-        movea.l a0,a1
-        jsr     L03BC(pc)               ;check/get job ID & header (abort if bad)
-        exg     a0,a1                   ;a0=filename, a1=job hdr
-        movea.l sv_chbas(a6),a3
+   32d4     movea.l a0,a1
+   32d6     jsr     L03BC(pc)               ;check/get job ID & header (abort if bad)
+   32da     exg     a0,a1            0x49C1         ;a0=filename, a1=job hdr   c149
+   32dc     movea.l sv_chbas(a6),a3				0x6E26, 0x7800
 L32E0   tst.b   (a3)                    ;free channel table entry
-        blt.s   L32F0
-        addq.w  #4,a3                   ;next entry
-        cmpa.l  sv_chtop(a6),a3
-        blt.s   L32E0                   ;until top
-        moveq   #err.no,d0
-        bra.s   L334C
+   32e2     blt.s   L32F0
+   32e4     addq.w  #4,a3                   ;next entry
+   32e6     cmpa.l  sv_chtop(a6),a3
+   32ea     blt.s   L32E0                   ;until top
+   32ec     moveq   #err.no,d0						0xFA70		250 -6
+   32ee     bra.s   L334C
 
 L32F0   movea.l sv_drlst(a6),a2         ;start with list of simple drivers
 L32F4   movem.l d1-d7/a1-a6,-(a7)
-        lea     -sv_lio(a2),a3          ;base of driver linakge block
-        movea.l sv_aopen-sv_lio(a2),a4  ;open routine
-        jsr     (a4)
-        movem.l (a7)+,d1-d7/a1-a6
-        tst.l   d0
-        beq.s   L331E                   ;succesful open
-        cmpi.w  #err.nf,d0
-        bne.s   L334C                   ;abort on errors other than not found
-        movea.l (a2),a2                 ;get link to next driver linkage
-        move.l  a2,d0
-        bgt.s   L32F4                   ;try next simple driver
-        jsr     L355A(pc)               ;else try directory drivers
-        tst.l   d0
-        bne.s   L334C                   ;unsuccesful open
+   32f8     lea     -sv_lio(a2),a3          ;base of driver linkage block
+   32fc     movea.l sv_aopen-sv_lio(a2),a4  ;open routine
+   3300     jsr     (a4)
+   3302     movem.l (a7)+,d1-d7/a1-a6
+   3306     tst.l   d0
+   3308     beq.s   L331E                   ;succesful open
+   330a     cmpi.w  #err.nf,d0
+   330e     bne.s   L334C                   ;abort on errors other than not found
+   3310     movea.l (a2),a2                 ;get link to next driver linkage
+   3312     move.l  a2,d0
+   3314     bgt.s   L32F4                   ;try next simple driver
+   3316     jsr     L355A(pc)               ;else try directory drivers
+   331a     tst.l   d0
+   331c     bne.s   L334C                   ;unsuccesful open
 L331E   move.l  a0,(a3)                 ;definition address to table entry
-        move.w  sv_chtag(a6),d2         ;new tag for channel
-        addq.w  #1,sv_chtag(a6)
-        addq.w  #4,a0
-        move.l  a2,(a0)+                ;ch_drivr
-        move.l  d1,(a0)+                ;ch_owner
-        move.l  a3,(a0)+                ;ch_rflag (channel table entry)
-        move.w  d2,(a0)+                ;ch_tag
-        clr.w   (a0)+                   ;ch_stat & ch_actn
-        clr.l   (a0)+                   ;ch_jobwt
-        swap    d2
-        suba.l  sv_chbas(a6),a3
-        move.w  a3,d2
-        lsr.w   #2,d2                   ;channel number
-        movea.l d2,a0                   ;channel ID returned
-        cmp.w   sv_chmax(a6),d2         ;highest channel ?
-        bls.s   L334C                   ;no
-        move.w  d2,sv_chmax(a6)         ;update highest
+   3320     move.w  sv_chtag(a6),d2         ;new tag for channel
+   3324     addq.w  #1,sv_chtag(a6)
+   3328     addq.w  #4,a0
+   332a     move.l  a2,(a0)+                ;ch_drivr
+   332c     move.l  d1,(a0)+                ;ch_owner
+   332e     move.l  a3,(a0)+                ;ch_rflag (channel table entry)
+   3330     move.w  d2,(a0)+                ;ch_tag
+   3332     clr.w   (a0)+                   ;ch_stat & ch_actn
+   3334     clr.l   (a0)+                   ;ch_jobwt
+   3336     swap    d2
+   3338     suba.l  sv_chbas(a6),a3
+   333c     move.w  a3,d2
+   333e     lsr.w   #2,d2                   ;channel number
+   333e     movea.l d2,a0                   ;channel ID returned
+   3340     cmp.w   sv_chmax(a6),d2         ;highest channel ?
+   3344     bls.s   L334C                   ;no
+   3346     move.w  d2,sv_chmax(a6)         ;update highest
 L334C   movem.l (a7)+,a1-a4
         bra.s   L3378                   ;return from trap
 
@@ -5802,39 +5886,39 @@ L3352   move.l  a0,d7                   ;preserve channel ID
         st      (a0)                    ;channel table entry now free
 L3378   bra     L03A6                   ;return from trap
 
-;Call driver with requested Trap #3 operation
+;Call driver with requested Trap #3 operation trap3
 
-L337C   move.l  a0,d7                   ;preserve channel ID
-        jsr     L3476(pc)               ;get channel definition (abort if bad ID)
-        tas     ch_stat(a0)             ;make channel busy
-        bne     L3414                   ;it already was, wait or return
-        movem.l d2-d7/a2-a6,-(a7)
+L337C   move.l  a0,d7                   ;preserve channel ID					
+  337e      jsr     L3476(pc)               ;get channel definition (abort if bad ID)
+  3382      tas     ch_stat(a0)             ;make channel busy
+  3386      bne     L3414                   ;it already was, wait or return
+  338a      movem.l d2-d7/a2-a6,-(a7)
         clr.l   -(a7)                   ;offset for A1
-        andi.l  #$7F,d0                 ;mask operation code (already done)
+  3390      andi.l  #$7F,d0                 ;mask operation code (already done)
         cmpi.b  #fs.save,d0
-        bgt.s   L33B0                   ;operations $49 to $7F
-        cmpi.b  #fs.heads,d0
-        bge.s   L33AE                   ;operations $46 to $49
-        cmpi.b  #io.sstrg,d0
-        bgt.s   L33B0                   ;operations $08 to $45
+  339a      bgt.s   L33B0                   ;operations $49 to $7F
+  339c      cmpi.b  #fs.heads,d0
+  33a0      bge.s   L33AE                   ;operations $46 to $49
+  33a2      cmpi.b  #io.sstrg,d0
+  33a6      bgt.s   L33B0                   ;operations $08 to $45
         btst    #1,d0
         beq.s   L33B0                   ;operations $00, $01, $04 and $05
 L33AE   moveq   #0,d1                   ;counter for multiple byte read/write operations
 L33B0   movea.l sv_jbpnt(a6),a3         ;current job
         movea.l (a3),a3                 ;job header
-        bclr    #7,jb_rela6(a3)         ;A1 to be relative A6 ?
+   33b6     bclr    #7,jb_rela6(a3)         ;A1 to be relative A6 ?
         beq.s   L33C4                   ;no
         move.l  trlv_a6(a5),(a7)
         adda.l  (a7),a1                 ;offset A1 by A6
 L33C4   movea.l ch_drivr(a0),a4
-        move.b  d0,ch_actn(a0)          ;pending operation
-        moveq   #0,d3                   ;first attempt at I/O
-        lea     -sv_lio(a4),a3
-        movea.l sv_aio-sv_lio(a4),a4
-        jsr     (a4)                    ;call driver I/O routine
-        suba.l  (a7),a1                 ;redress A1
-        cmpi.w  #err.nc,d0              ;incomplete operation ?
-        bne.s   L3422                   ;no
+   33c8     move.b  d0,ch_actn(a0)          ;pending operation
+   33cc     moveq   #0,d3                   ;first attempt at I/O
+   33ce     lea     -sv_lio(a4),a3				0xEC47, 0xE8FF
+   33d2     movea.l sv_aio-sv_lio(a4),a4			0x6C28 0x0400
+   33d6     jsr     (a4)                    ;call driver I/O routine
+   33d8     suba.l  (a7),a1                 ;redress A1
+   33da     cmpi.w  #err.nc,d0              ;incomplete operation ?
+   33de     bne.s   L3422                   ;no
         move.w  10(a7),d3               ;restore requested timeout
         beq.s   L3422                   ;none
         movea.l 44(a7),a6               ;restore a6 to sv_base
@@ -5865,6 +5949,7 @@ L3422   addq.w  #4,a7                   ;discard offset for a1
 L342C   movea.l d7,a0                   ;restore channel ID
         bra     L03A6                   ;return from trap
 
+
 ;Operation for Trap #4. A0 next trap #2 or A1 next trap #3 is to be relative A6
 
 L3432   move.l  a3,-(a7)
@@ -5877,31 +5962,31 @@ L3432   move.l  a3,-(a7)
 ;Return channel definition in a0 given channel ID in a0
 
 L3444   move.l  a0,-(a7)                ;channel ID
-        move.l  d0,-(a7)                ;preserve
-        move.l  a0,d0
-        cmp.w   sv_chmax(a6),d0         ;too high ?
-        bhi.s   L346E                   ;yes
+   3446     move.l  d0,-(a7)                ;preserve
+   3448     move.l  a0,d0
+   344a     cmp.w   sv_chmax(a6),d0         ;too high ?
+   344e     bhi.s   L346E                   ;yes
         lsl.w   #2,d0                   ;table entry offset
         movea.l sv_chbas(a6),a0
   3456  adda.w  d0,a0
-        tst.b   (a0)                    ;valid entry ?
-        blt.s   L346E                   ;no
-        movea.l (a0),a0                 ;channel definition address
-        swap    d0
-        cmp.w   ch_tag(a0),d0           ;correct tag ?
-        bne.s   L346E                   ;no
-        move.l  (a7)+,d0                ;restore
-        addq.w  #4,a7                   ;discard ID
-        cmp.b   d0,d0                   ;return OK
+  3458      tst.b   (a0)                    ;valid entry ?
+  345a      blt.s   L346E                   ;no
+  345c      movea.l (a0),a0                 ;channel definition address
+  345e      swap    d0
+  3460      cmp.w   ch_tag(a0),d0           ;correct tag ?
+  3464      bne.s   L346E                   ;no
+  3466      move.l  (a7)+,d0                ;restore
+  3468      addq.w  #4,a7                   ;discard ID
+  346a      cmp.b   d0,d0                   ;return OK
 L346C   rts
 
 L346E   addq.w  #4,a7                   ;discard d0
-        moveq   #err.no,d0              ;return channel not open
+        moveq   #err.no,d0              ;return channel not open			FA -6
         movea.l (a7)+,a0                ;but restore ID
         rts
 
 L3476   bsr.s   L3444                   ;get channel definition
-        beq.s   L346C                   ;OK
+   3478     beq.s   L346C                   ;OK
         addq.w  #4,a7                   ;discard return
         bra     L03A6                   ;return from trap
 
@@ -6085,7 +6170,7 @@ L3664   moveq   #err.ex,d0              ;file already exists
         bra.s   L366E
 L3668   moveq   #err.iu,d0              ;file is in use
         bra.s   L366E
-L366C   moveq   #err.no,d0              ;channel is not open
+L366C   moveq   #err.no,d0              ;channel is not open   FA -6 
 L366E   lea     sv_fslst(a6),a1
         jsr     L39E2(pc)               ;ut_unlnk, unlink the physical definition block
         suba.w  #fs_next,a0             ;base of channel definition
@@ -6170,16 +6255,16 @@ L372C   movea.l (a7),a2
         addq.w  #6,a2
         movem.l d4/d7/a0/a3,-(a7)
         moveq   #0,d7
-        move.w  (a0)+,d7
+   3736     move.w  (a0)+,d7
         add.l   a0,d7
         move.w  (a2)+,d2
 L373C   bsr.s   L37B6
-        cmp.b   (a2)+,d1
+   373e     cmp.b   (a2)+,d1
         bne.s   L37A6
-        subq.b  #1,d2
-        bne.s   L373C
-        bsr.s   L3720
-        move.w  (a2)+,d4
+   3742     subq.b  #1,d2
+   3744     bne.s   L373C
+   3746     bsr.s   L3720
+   3748     move.w  (a2)+,d4
         bra.s   L3790
 
 L374C   bsr.s   L3720
@@ -6238,7 +6323,7 @@ L37AE   movem.l (a7)+,d4/d7/a0/a3
 
 L37B6   moveq   #0,d1
         cmp.l   a0,d7
-        beq.s   L37C8
+   37b8     beq.s   L37C8
         move.b  (a0),d1
         cmpi.b  #$60,d1
         blt.s   L37C8
@@ -6427,9 +6512,9 @@ L390E   movea.l -4(a4),a4               ;send a byte routine
 
 ;IO.SERIO operation unsupported or error return
 
-L3914   moveq   #err.bp,d0
+L3914   moveq   #err.bp,d0				0xF170 241 f1 -15
         bra.s   L392C
-L3918   moveq   #err.bo,d0              ;buffer exceeded
+L3918   moveq   #err.bo,d0              ;buffer exceeded		0xFb70 251 fb -5
         bra.s   L391E
 L391C   moveq   #err.ok,d0
 L391E   move.l  d5,d1                   ;bytes achieved
@@ -6482,14 +6567,14 @@ L395E   move.l  a0,-(a7)
 
 L3968   tst.l   d0
         bge.s   L398E
-        movem.l d0-d3/a1,-(a7)
-        movea.l d0,a1
-        add.l   d0,d0
-        bvs.s   L3986
-        neg.w   d0
-        movea.l sv_mgtab+sv_base,a1
-        move.w  0(a1,d0.w),d0
-        lea     0(a1,d0.w),a1
+   396c     movem.l d0-d3/a1,-(a7)
+   3970     movea.l d0,a1
+   3972     add.l   d0,d0
+   3974     bvs.s   L3986
+   3976     neg.w   d0
+   3978     movea.l sv_mgtab+sv_base,a1
+   397e     move.w  0(a1,d0.w),d0
+   3982     lea     0(a1,d0.w),a1
 L3986   jsr     L39B2(pc)               ;ut_mtext
         movem.l (a7)+,d0-d3/a1
 L398E   rts
@@ -6515,18 +6600,18 @@ L3990   move.l  a6,-(a7)
 ;Vector $D0 UT_MTEXT - Send message to channel
 
 L39B2   move.w  (a1)+,d2
-L39B4   moveq   #io.sstrg,d0
-        move.l  a0,d3
-        beq.s   L39BE
-        moveq   #forever,d3
-        bra.s   L39C4
+L39B4   moveq   #io.sstrg,d0				0x0770  	=7
+   39b6     move.l  a0,d3
+   39b8     beq.s   L39BE
+   39ba     moveq   #forever,d3
+   39bc     bra.s   L39C4
 L39BE   sf      sv_scrst+sv_base        ;make screen active
-L39C4   trap    #3
-        cmpi.w  #err.nc,d0
-        bne.s   L39D8
-        movea.l #$00010001,a0
+L39C4   trap    #3								0x434E    trap3
+   39c6     cmpi.w  #err.nc,d0				 0x400C, 0xFFFF
+   39ca     bne.s   L39D8							0x0C66
+   39cc     movea.l #$00010001,a0				0x7C20, 0x0100 0x0100
         moveq   #io.sstrg,d0
-        trap    #3
+        trap    #3						trap3
         suba.l  a0,a0
 L39D8   tst.l   d0
         rts
@@ -6556,43 +6641,43 @@ L39F2   bsr.s   L3A2A
 
 ;Vector $C6 UT_CON - Create console channel
 
-L39F6   lea     L3A44(pc),a0
-        bra.s   L3A00
+L39F6   lea     L3A44(pc),a0				0xFA41, 0x4C00
+        bra.s   L3A00						0x0460
 
 ;Vector $C8 UT_SCR - Create screen channel
 
-L39FC   lea     L3A4A(pc),a0
+L39FC   lea     L3A4A(pc),a0				0xFA41 0x4C00
 L3A00   bsr.s   L3A2A
 L3A02   addq.w  #4,a1
-        moveq   #sd.wdef,d0
-        moveq   #0,d2
-        bsr.s   L3A36
-        subq.w  #4,a1
-L3A0C   moveq   #sd.bordr,d0
+   3a04     moveq   #sd.wdef,d0     0x0d70 =13
+   3a06     moveq   #0,d2
+   3a08     bsr.s   L3A36
+   3a0a     subq.w  #4,a1
+L3A0C   moveq   #sd.bordr,d0			0x0C70 =12
         move.b  (a1)+,d1
         move.b  (a1)+,d2
         bsr.s   L3A36
-        moveq   #sd.setpa,d0
+        moveq   #sd.setpa,d0			0x2770 =39
         move.b  (a1),d1
         bsr.s   L3A36
-        moveq   #sd.setst,d0
+        moveq   #sd.setst,d0			0x2870 =40
         move.b  (a1)+,d1
         bsr.s   L3A36
-        moveq   #sd.setin,d0
+        moveq   #sd.setin,d0			0x2970 =41
         move.b  (a1),d1
         bsr.s   L3A36
-        moveq   #sd.clear,d0
+        moveq   #sd.clear,d0			0x2070 =32
         bra.s   L3A36
 
 L3A2A   move.l  a1,-(a7)
-        moveq   #io.open,d0
-        moveq   #my.job,d1
-        moveq   #io.old,d3
-        trap    #2
-        bra.s   L3A3A
+   3a2c     moveq   #io.open,d0					=1
+   3a2e     moveq   #my.job,d1					=-1
+   3a30     moveq   #io.old,d3					=0
+   3a32     trap    #2
+   3a34     bra.s   L3A3A
 
 L3A36   move.l  a1,-(a7)
-        trap    #3
+        trap    #3				trap3
 L3A3A   movea.l (a7)+,a1
         tst.l   d0
         beq.s   L3A42
@@ -8310,7 +8395,7 @@ L4A5C   move.w  0(a6,a1.l),d2
 
 L4A74   bra.s   L4AAA
 
-L4A76   cmpi.l  #$4AFB0001,(a3)         ;ROM header
+L4A76   cmpi.l  #$4AFB0001,(a3)         ;ROM header (cerca a $c000 e a seguire a blocch di 16K, credo estensioni ROM, quindi esce subito)
         bne.s   L4A9E
         lea     8(a3),a1                ;banner text (if any)
         jsr     L39B2(pc)               ;ut_mtext
@@ -8324,53 +8409,62 @@ L4A94   move.w  6(a3),d0                ;initialisation routine ?
 L4A9E   rts
 
 L4AA0   jsr     L39F6(pc)               ;ut_con
-        move.l  d4,d1
-        jmp     L6646(pc)
+   4aa4     move.l  d4,d1
+        jmp     L6646(pc)				la fa 6 volte (e poi errore 27/12/22)
 
 L4AAA   jsr     L566E(pc)               ;set up BASIC
-  4aae      jsr     L6DA2(pc)               ;introduce BASIC keywords
+
+sp=3fff8
+
+
+  4aae      jsr     L6DA2(pc)               ;introduce BASIC keywords, questo crea anche i "channel" a 3f498 ecc
 
 
 
   4ab2      lea     L4BBA(pc),a1            ;ROM banner window definition block
-        moveq   #0,d4                   ;BASIC channel #0
-        bsr.s   L4AA0                   ;..open it
-        movea.l #$0000C000,a3           ;ROM slot first
-        bsr.s   L4A76
-        movea.l #$000C0000,a3           ;768K boundary
+  4ab6      moveq   #0,d4                   ;BASIC channel #0
+  4ab8      bsr.s   L4AA0                   ;..open it
+  4aba      movea.l #$0000C000,a3           ;ROM slot first
+  4ac0      bsr.s   L4A76
+  4ac2      movea.l #$000C0000,a3           ;768K boundary
 L4AC8   bsr.s   L4A76
-        adda.w  #$4000,a3               ;and every 16K boundary
-        cmpa.l  #$00100000,a3           ;to 1M upper limit
-        blt.s   L4AC8
-        lea     L4BC6(pc),a1            ;copyright window definition block
-        moveq   #1,d4                   ;BASIC channel #1
-        bsr.s   L4AA0                   ;open it
-        moveq   #err.cp,d0              ;copyright message
-        jsr     L3968(pc)               ;ut_err
-        lea     L4BD2(pc),a1            ;prompt window definition block
-        moveq   #2,d4                   ;BASIC channel #2
-        bsr.s   L4AA0                   ;open it
-        moveq   #err.bt,d0              ;boot message
-        jsr     L3968(pc)               ;ut_err
+   4aca     adda.w  #$4000,a3               ;and every 16K boundary
+   4ace     cmpa.l  #$00100000,a3           ;to 1M upper limit
+
+   4ad4     blt.s   L4AC8
+
+   4ad6     lea     L4BC6(pc),a1            ;copyright window definition block
+   4ada     moveq   #1,d4                   ;BASIC channel #1
+   4adc     bsr.s   L4AA0                   ;open it
+   4ade     moveq   #err.cp,d0      0xE770,         ;copyright message = 231= -25
+   4ae0     jsr     L3968(pc)               ;ut_err
+   4ae4     lea     L4BD2(pc),a1            ;prompt window definition block
+   4ae8     moveq   #2,d4                   ;BASIC channel #2
+   4aea     bsr.s   L4AA0                   ;open it
+   4aec     moveq   #err.bt,d0              ;boot message
+   4aee     jsr     L3968(pc)       0xE870        ;ut_err = 232 = -24
 L4AF2   moveq   #io.fbyte,d0
-        moveq   #forever,d3             ;wait for user to press F1 or F2
-        trap    #3
-        moveq   #0,d6                   ;mode 4
-        moveq   #0,d7                   ;monitor mode
-        moveq   #$20,d5
-        subi.b  #$E8,d1
-        beq.s   L4B0E                   ;F1 pressed
-        subq.b  #4,d1
-        bne.s   L4AF2                   ;F2 not pressed, try again
+   4af4     moveq   #forever,d3             ;wait for user to press F1 or F2
+   4af6     trap    #3		trap3
+   4af8     moveq   #0,d6                   ;mode 4
+   4afa     moveq   #0,d7                   ;monitor mode
+   4afc     moveq   #$20,d5
+   4afe     subi.b  #$E8,d1
+   4b02     beq.s   L4B0E                   ;F1 pressed
+   4b04     subq.b  #4,d1
+   4b06     bne.s   L4AF2                   ;F2 not pressed, try again
         moveq   #8,d6                   ;mode 8
         moveq   #1,d7                   ;TV mode
         moveq   #$44,d5
 L4B0E   move.b  d6,d1
-        move.b  d7,d2
-        moveq   #mt.dmode,d0
-        trap    #1
-        lea     L4B72-$08(pc,d5.w),a1   ;redefine #2 window
-        bsr.s   L4B6E
+   4b10     move.b  d7,d2
+   4b12     moveq   #mt.dmode,d0
+   4b14     trap    #1
+
+
+
+   4b16     lea     L4B72-$08(pc,d5.w),a1   ;redefine #2 window
+   4b1a     bsr.s   L4B6E
         movea.l #$00010001,a0           ;channel #1
         lea     L4B72-$14(pc,d5.w),a1   ;redefine #1 window
         bsr.s   L4B6E
@@ -8387,6 +8481,10 @@ L4B40   clr.w   bv_nxlin(a6)            ;no line to start after
         bra.s   L4B54
 
 L4B46   moveq   #io.open,d0
+
+
+
+
         moveq   #my.job,d1
         moveq   #io.old,d3
         trap    #2
@@ -8426,9 +8524,16 @@ L4B72   dc.b    0,0,0,4
 ;Boot window definitions
 
 L4BBA   dc.b    0,0,0,4
+alla seconda passata di ut_err trap 3 legge questi 4bbe
         dc.w    448,170,32,32           ;ROM banner window
+
+
+
 L4BC6   dc.b    7,2,2,7
         dc.w    368,14,72,238           ;copyright window
+
+
+
 L4BD2   dc.b    4,4,7,2
         dc.w    168,28,174,206          ;F1/F2 window
 
@@ -8695,7 +8800,7 @@ L4E76   moveq   #bv_vvp,d2
 
 ;Reserve space in Channel table
 
-L4E7A   moveq   #bv_chp,d2
+L4E7A   moveq   #bv_chp,d2				0x34 = 52
         bra.s   L4E84
 
 ;Reserve space in Line number table
@@ -8719,11 +8824,11 @@ L4E9A   cmp.l   d1,d3
    4e9e     movem.l a0-a3,-(a7)
    4ea2     addi.l  #15,d1
    4ea8     andi.w  #$FFF0,d1
-L4EAC   move.l  bv_btp(a6),d3
-        sub.l   bv_lnp(a6),d3
-        cmp.l   d1,d3
-        bgt.s   L4F14
-  4eb6      movem.l d0-d2,-(a7)			e748 00e0
+L4EAC   move.l  bv_btp(a6),d3						48
+   4eb0     sub.l   bv_lnp(a6),d3
+   4eb4     cmp.l   d1,d3
+   4eb6     bgt.s   L4F14
+  4eb8      movem.l d0-d2,-(a7)			e748 00e0
         moveq   #mt.albas,d0		0x1670
    4ebe    trap    #1					0x414e
    4ec0     tst.l   d0
@@ -8758,21 +8863,21 @@ L4F02   add.l   d1,0(a6,d0.l)
    4f12     bra.s   L4EAC
 
 L4F14   tst.b   d0
-        bmi.s   L4F54
-        cmpi.l  #68,d2
-        beq.s   L4F84
-        movea.l bv_lnp(a6),a1
-        movea.l 4(a6,d2.l),a0
-        lea     0(a1,d1.l),a2
+   4f16     bmi.s   L4F54
+   4f18     cmpi.l  #68,d2
+   4f1e     beq.s   L4F84
+   4f20     movea.l bv_lnp(a6),a1
+   4f24     movea.l 4(a6,d2.l),a0
+   4f28     lea     0(a1,d1.l),a2
 L4F2C   subq.w  #4,a1
         subq.w  #4,a2
         move.l  0(a6,a1.l),0(a6,a2.l)
-        cmpa.l  a0,a1
-        bgt.s   L4F2C
-        moveq   #4,d0
-        add.w   d2,d0
-        moveq   #72,d2
-        tst.l   bv_vvfree(a6)
+   4f36     cmpa.l  a0,a1
+   4f38     bgt.s   L4F2C
+   4f3a     moveq   #4,d0
+   4f3c     add.w   d2,d0
+   4f3e     moveq   #72,d2
+   4f40     tst.l   bv_vvfree(a6)
         beq.s   L4F7A
         cmpi.l  #40,d0
         bgt.s   L4F7A
@@ -11151,11 +11256,11 @@ L65E8   move.l  a5,-(a7)
         addq.l  #2,bv_rip(a6)
 L661C   movea.l (a7)+,a5
 L661E   move.l  d1,d0
-        movea.l bv_chbas(a6),a0
-        mulu.w  #ch.lench,d0
-        adda.l  d0,a0
-        cmpa.l  bv_chp(a6),a0
-        bge.s   L663E
+   6620     movea.l bv_chbas(a6),a0				0x6E20 0x3000
+   6624     mulu.w  #ch.lench,d0					0xFCC0 0x2800 = 0x28 = 40
+   6628     adda.l  d0,a0
+        cmpa.l  bv_chp(a6),a0							0xEEB1 0x3400
+   662e     bge.s   L663E
         move.l  0(a6,a0.l),d0           ;get channel ID
         blt.s   L663E
         movea.l a0,a2
@@ -11163,23 +11268,23 @@ L661E   move.l  d1,d0
         moveq   #err.ok,d0
         rts
 
-L663E   moveq   #err.no,d0
+L663E   moveq   #err.no,d0					            FA -6
         rts
 
 L6642   addq.w  #8,a7
         rts
 
 L6646   move.l  a0,-(a7)
-        bsr.s   L661E
-        beq.s   L669E
-        cmpa.l  bv_chp(a6),a0
-        blt.s   L6680
-        move.l  d1,-(a7)
+   6648     bsr.s   L661E
+   664a     beq.s   L669E
+   664c     cmpa.l  bv_chp(a6),a0					0x3400
+   6650     blt.s   L6680
+   6652     move.l  d1,-(a7)
         move.l  a0,d1
-        addi.l  #ch.lench,d1
-        sub.l   bv_chp(a6),d1
-        jsr     L4E7A(pc)               ;reserve space in channel table
-        move.l  (a7)+,d1
+   6656     addi.l  #ch.lench,d1
+   665c     sub.l   bv_chp(a6),d1
+   6660     jsr     L4E7A(pc)               ;reserve space in channel table
+   6664     move.l  (a7)+,d1
         bsr.s   L661E
 L6668   movea.l bv_chp(a6),a2
         addi.l  #ch.lench,bv_chp(a6)
@@ -11189,14 +11294,14 @@ L6668   movea.l bv_chp(a6),a2
 L6680   movea.l a0,a2
         moveq   #10,d0
 L6684   clr.l   0(a6,a0.l)
-        addq.w  #4,a0
-        subq.w  #1,d0
-        bgt.s   L6684
-        movea.l (a7)+,a0
-        move.l  a0,ch.id(a6,a2.l)
-        move.w  #80,ch.width(a6,a2.l)
-        moveq   #err.ok,d0
-        rts
+   6688     addq.w  #4,a0
+   668a     subq.w  #1,d0
+   668c     bgt.s   L6684
+   668e     movea.l (a7)+,a0
+   6690     move.l  a0,ch.id(a6,a2.l)				0x882D, 0x00A8   scrive a 3fda8
+   6694     move.w  #80,ch.width(a6,a2.l)				0xBC3D, 0x5000 0x22A8
+        moveq   #err.ok,d0									0x0070	
+        rts																	0x754E
 
 L669E   moveq   #err.ex,d0
         rts
@@ -11536,7 +11641,7 @@ L699A   bsr.s   L6988
 
 L69A4   trap    #4
 L69A6   moveq   #forever,d3
-        trap    #3
+        trap    #3			trap3
         tst.l   d0
         rts
 
@@ -11592,7 +11697,7 @@ L69EC   jsr     L65E6(pc)
         bsr.s   L6A6A
         moveq   #io.sbyte,d0
         moveq   #10,d1
-        trap    #3
+        trap    #3						trap3
         movem.w (a7)+,d1-d2
         bsr.s   L6A40
 L6A1A   moveq   #io.fstrg,d0
@@ -11608,14 +11713,14 @@ L6A1A   moveq   #io.fstrg,d0
         bsr.s   L6A6A
         moveq   #io.sbyte,d0
         moveq   #10,d1
-        trap    #3
+        trap    #3					trap3
         bra.s   L6A1A
 
 L6A40   move.w  d2,d4
         bsr.s   L6A5A
         moveq   #io.sbyte,d0
         move.b  #'/',d1
-        trap    #3
+        trap    #3						trap3
         move.w  d4,d1
         bsr.s   L6A5A
         moveq   #err.sc,d0
@@ -11687,7 +11792,7 @@ L6AE0   tas     bv_brk(a6)
         beq.s   L6B1E
         moveq   #io.fstrg,d0
         trap    #4
-        trap    #3
+        trap    #3							trap3
         cmpi.l  #err.nc,d0
         bne.s   L6AFA
         tst.w   d1
@@ -11777,7 +11882,7 @@ L6B88   jsr     L65E6(pc)
         move.l  a1,bv_rip(a6)
         moveq   #sd.flood,d0
         moveq   #forever,d3
-        trap    #3
+        trap    #3						trap3
 L6BA4   rts
 
 ;BASIC - Procedure 'UNDER'
@@ -11814,7 +11919,7 @@ L6BE0   bsr     L6CB6
         moveq   #sd.gcur,d0
         moveq   #forever,d3
         trap    #4
-        trap    #3
+        trap    #3					trap3
 L6BF2   bra     L6CAE
 
 ;BASIC - Procedure 'SCALE'
@@ -11895,7 +12000,7 @@ L6C96   move.l  d4,d0
         bclr    #7,d0
         moveq   #forever,d3
         trap    #4
-        trap    #3
+        trap    #3							trap3
 L6CA4   cmpa.l  d6,a3
         bge.s   L6CAC
         move.l  a4,-(a7)
@@ -12006,48 +12111,65 @@ L6DA2   lea     L6E22(pc),a1            ;list of BASIC keywords
 
 ;Vector $110 BP_INIT - Add SuperBASIC extensions
 
-L6DA6   movem.l d1-d2/d5-d7/a0/a2-a3,-(a7)
-        moveq   #8,d6
+sp=3fff8
+
+
+L6DA6   movem.l d1-d2/d5-d7/a0/a2-a3,-(a7)				=8*4 =32=20h
+   6daa     moveq   #8,d6
 L6DAC   moveq   #0,d7
-        moveq   #0,d5
-        move.w  (a1)+,d5
-        lsl.l   #3,d5
-        move.l  d5,d1
-        move.l  a1,-(a7)
-        jsr     L4E60(pc)               ;reserve space on name table stack
-        move.l  d5,d1
-        jsr     L4E72(pc)               ;reserve space on name list stack
-        movea.l (a7)+,a3
+   6dae     moveq   #0,d5
+   6db0     move.w  (a1)+,d5
+   6db2     lsl.l   #3,d5
+   6db4     move.l  d5,d1
+   6db6     move.l  a1,-(a7) *
+   6db8     jsr     L4E60(pc)               ;reserve space on name table stack
+   6dbc     move.l  d5,d1
+   6dbe     jsr     L4E72(pc)               ;reserve space on name list stack
+   6dc2     movea.l (a7)+,a3 *
+
+
+	 3ffd8
+
+
 L6DC4   movea.l a3,a1
-        move.w  (a3)+,d0
-        beq.s   L6E0C
-        adda.w  d0,a1
-        move.l  a1,-(a7)
+   6dc6     move.w  (a3)+,d0
+   6dc8     beq.s   L6E0C
+
+   6dca     adda.w  d0,a1
+        move.l  a1,-(a7) *
         move.b  (a3)+,d5
-        move.b  d5,-(a7)
-        move.b  d6,-(a7)
-        move.b  d5,d1
+        move.b  d5,-(a7) *
+   6dd2     move.b  d6,-(a7) *
+   6dd4     move.b  d5,d1
         movea.l (a6),a1                 ;bv_bfbas
 L6DD8   move.b  (a3)+,0(a6,a1.l)
         addq.w  #1,a1
-        subq.b  #1,d1
-        bgt.s   L6DD8
-        move.l  a3,-(a7)
-        movea.l (a6),a3                 ;bv_bfbas
-        lea     L8B5A(pc),a2            ;(commands syntax table)
-        movea.l (a2),a2
-        jsr     L8622(pc)
-        bra.s   L6E16                   ;fail
-        movea.l (a7)+,a3                ;OK
-        move.b  (a7)+,d6
-        move.b  (a7)+,d5
-        move.l  (a7)+,4(a6,a2.l)
+   6dde     subq.b  #1,d1
+   6de0     bgt.s   L6DD8
+   6de2     move.l  a3,-(a7) *
+   6de4     movea.l (a6),a3                 ;bv_bfbas
+   6de6     lea     L8B5A(pc),a2            ;(commands syntax table)
+   6dea     movea.l (a2),a2
+   6dec     jsr     L8622(pc)
+
+	 3ffce
+
+
+   6df0     bra.s   L6E16                   ;fail
+
+	 sp=3ffce
+
+
+        movea.l (a7)+,a3  *              ;OK
+        move.b  (a7)+,d6  *
+        move.b  (a7)+,d5  *
+        move.l  (a7)+,4(a6,a2.l)  *
         move.b  d6,0(a6,a2.l)
-        move.b  d7,1(a6,a2.l)
-        btst    d7,d5
-        bne.s   L6DC4
-        addq.w  #1,a3
-        bra.s   L6DC4
+   6e00     move.b  d7,1(a6,a2.l)
+   6e04     btst    d7,d5
+   6e06     bne.s   L6DC4
+   6e08     addq.w  #1,a3
+   6e0a     bra.s   L6DC4
 
 L6E0C   subq.w  #8,d6
         bne.s   L6E1C
@@ -12056,9 +12178,14 @@ L6E0C   subq.w  #8,d6
         bra.s   L6DAC
 
 L6E16   adda.w  #12,a7
-        moveq   #err.bn,d0
+   6e1a     moveq   #err.bn,d0
 L6E1C   movem.l (a7)+,d1-d2/d5-d7/a0/a2-a3
+
+
+	 sp=3fff8 ora
+
         rts
+
 
 ;BASIC keywords
 
@@ -12758,7 +12885,7 @@ L7648   jsr     L61DA(pc)               ;ca_gtint
 L765A   moveq   #0,d1
         jsr     L661E(pc)
         moveq   #io.fbyte,d0
-        trap    #3
+        trap    #3			trap3
         moveq   #err.ok,d0
         rts
 
@@ -13091,7 +13218,7 @@ L7968   moveq   #io.sstrg,d0
 L796E   trap    #4
 L7970   moveq   #forever,d3
         movea.l 0(a6,a5.l),a0
-        trap    #3
+        trap    #3				trap3
         rts
 
 L797A   moveq   #sd.chenq,d0
@@ -13146,7 +13273,7 @@ L79C8   moveq   #4,d0
         moveq   #io.fline,d0
         sub.w   d1,d2
 L79E6   moveq   #forever,d3
-        trap    #3
+        trap    #3						trap3
         tst.l   d0
         bge.s   L7A06
         cmpi.b  #$FB,d0                 ;err.bo ?
@@ -13187,9 +13314,9 @@ L7A1A   movea.l 0(a6,a5.l),a0
         bne.s   L7A14
         move.l  a3,-(a7)
         moveq   #sd.pcol,d0
-        trap    #3
+        trap    #3					trap3
         moveq   #sd.ncol,d0
-        trap    #3
+        trap    #3					trap3
         movea.l (a7)+,a3
         movea.l (a6),a0                 ;bv_bfbas
         move.l  a1,d7
@@ -13712,7 +13839,7 @@ L7EE4   bsr.s   L7F24
         beq.s   L7ECE
         moveq   #sd.line,d0
         trap    #4
-        trap    #3
+        trap    #3							trap3
 L7F22   rts
 
 L7F24   move.w  #256,d1
@@ -13801,7 +13928,7 @@ L7FC4   move.l  d4,d0
         moveq   #forever,d3
         move.l  a1,-(a7)
         trap    #4
-        trap    #3
+        trap    #3						trap3
         movea.l (a7)+,a1
         tst.l   d0
         rts
@@ -18236,6 +18363,103 @@ LAD9A   include char_font1
 LB106   include char_font2
 ;--------------------------------------
 
+  /*AD9A:*/ 0x1F, 0x60, 0x54, 0x28, 0x54, 0x28, 
+  /*ADA0:*/ 0x54, 0x28, 0x54, 0x28, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10, 
+  /*ADB0:*/ 0x10, 0x10, 0x10, 0x00, 0x10, 0x00, 0x00, 0x28, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  /*ADC0:*/ 0x28, 0x28, 0x7C, 0x28, 0x7C, 0x28, 0x28, 0x00, 0x00, 0x38, 0x50, 0x50, 0x38, 0x14, 0x14, 0x38, 
+  /*ADD0:*/ 0x00, 0x00, 0x64, 0x64, 0x08, 0x10, 0x20, 0x4C, 0x4C, 0x00, 0x00, 0x20, 0x50, 0x50, 0x20, 0x54, 
+  /*ADE0:*/ 0x48, 0x34, 0x00, 0x00, 0x10, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x08, 0x10, 
+  /*ADF0:*/ 0x10, 0x10, 0x08, 0x04, 0x00, 0x00, 0x40, 0x20, 0x10, 0x10, 0x10, 0x20, 0x40, 0x00, 0x00, 0x10, 
+  /*AE00:*/ 0x54, 0x38, 0x10, 0x38, 0x54, 0x10, 0x00, 0x00, 0x00, 0x10, 0x10, 0x7C, 0x10, 0x10, 0x00, 0x00, 
+  /*AE10:*/ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x08, 0x10, 0x00, 0x00, 0x00, 0x7C, 0x00, 0x00, 
+  /*AE20:*/ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00, 0x04, 0x04, 0x08, 0x10, 
+  /*AE30:*/ 0x20, 0x40, 0x40, 0x00, 0x00, 0x38, 0x44, 0x4C, 0x54, 0x64, 0x44, 0x38, 0x00, 0x00, 0x10, 0x30, 
+  /*AE40:*/ 0x10, 0x10, 0x10, 0x10, 0x38, 0x00, 0x00, 0x38, 0x44, 0x04, 0x08, 0x10, 0x20, 0x7C, 0x00, 0x00, 
+  /*AE50:*/ 0x38, 0x44, 0x04, 0x18, 0x04, 0x44, 0x38, 0x00, 0x00, 0x08, 0x18, 0x28, 0x48, 0x7C, 0x08, 0x08, 
+  /*AE60:*/ 0x00, 0x00, 0x7C, 0x40, 0x78, 0x04, 0x04, 0x44, 0x38, 0x00, 0x00, 0x18, 0x20, 0x40, 0x78, 0x44, 
+  /*AE70:*/ 0x44, 0x38, 0x00, 0x00, 0x7C, 0x04, 0x08, 0x10, 0x20, 0x40, 0x40, 0x00, 0x00, 0x38, 0x44, 0x44, 
+  /*AE80:*/ 0x38, 0x44, 0x44, 0x38, 0x00, 0x00, 0x38, 0x44, 0x44, 0x3C, 0x04, 0x08, 0x30, 0x00, 0x00, 0x00, 
+  /*AE90:*/ 0x00, 0x18, 0x18, 0x00, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00, 0x18, 0x18, 0x08, 
+  /*AEA0:*/ 0x10, 0x04, 0x08, 0x10, 0x20, 0x10, 0x08, 0x04, 0x00, 0x00, 0x00, 0x00, 0x7C, 0x00, 0x7C, 0x00, 
+  /*AEB0:*/ 0x00, 0x00, 0x00, 0x40, 0x20, 0x10, 0x08, 0x10, 0x20, 0x40, 0x00, 0x00, 0x38, 0x44, 0x04, 0x08, 
+  /*AEC0:*/ 0x10, 0x00, 0x10, 0x00, 0x00, 0x38, 0x44, 0x4C, 0x54, 0x4C, 0x40, 0x30, 0x00, 0x00, 0x38, 0x44, 
+  /*AED0:*/ 0x44, 0x7C, 0x44, 0x44, 0x44, 0x00, 0x00, 0x78, 0x44, 0x44, 0x78, 0x44, 0x44, 0x78, 0x00, 0x00, 
+  /*AEE0:*/ 0x38, 0x44, 0x40, 0x40, 0x40, 0x44, 0x38, 0x00, 0x00, 0x78, 0x44, 0x44, 0x44, 0x44, 0x44, 0x78, 
+  /*AEF0:*/ 0x00, 0x00, 0x7C, 0x40, 0x40, 0x78, 0x40, 0x40, 0x7C, 0x00, 0x00, 0x7C, 0x40, 0x40, 0x78, 0x40, 
+  /*AF00:*/ 0x40, 0x40, 0x00, 0x00, 0x38, 0x44, 0x40, 0x40, 0x4C, 0x44, 0x38, 0x00, 0x00, 0x44, 0x44, 0x44, 
+  /*AF10:*/ 0x7C, 0x44, 0x44, 0x44, 0x00, 0x00, 0x38, 0x10, 0x10, 0x10, 0x10, 0x10, 0x38, 0x00, 0x00, 0x04, 
+  /*AF20:*/ 0x04, 0x04, 0x04, 0x04, 0x44, 0x38, 0x00, 0x00, 0x44, 0x48, 0x50, 0x60, 0x50, 0x48, 0x44, 0x00, 
+  /*AF30:*/ 0x00, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x7C, 0x00, 0x00, 0x44, 0x6C, 0x54, 0x44, 0x44, 0x44, 
+  /*AF40:*/ 0x44, 0x00, 0x00, 0x44, 0x44, 0x64, 0x54, 0x4C, 0x44, 0x44, 0x00, 0x00, 0x38, 0x44, 0x44, 0x44, 
+  /*AF50:*/ 0x44, 0x44, 0x38, 0x00, 0x00, 0x78, 0x44, 0x44, 0x78, 0x40, 0x40, 0x40, 0x00, 0x00, 0x38, 0x44, 
+  /*AF60:*/ 0x44, 0x44, 0x54, 0x48, 0x34, 0x00, 0x00, 0x78, 0x44, 0x44, 0x78, 0x50, 0x48, 0x44, 0x00, 0x00, 
+  /*AF70:*/ 0x38, 0x44, 0x40, 0x38, 0x04, 0x44, 0x38, 0x00, 0x00, 0x7C, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 
+  /*AF80:*/ 0x00, 0x00, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x38, 0x00, 0x00, 0x44, 0x44, 0x44, 0x44, 0x44, 
+  /*AF90:*/ 0x28, 0x10, 0x00, 0x00, 0x44, 0x44, 0x44, 0x44, 0x54, 0x54, 0x28, 0x00, 0x00, 0x44, 0x44, 0x28, 
+  /*AFA0:*/ 0x10, 0x28, 0x44, 0x44, 0x00, 0x00, 0x44, 0x44, 0x28, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x7C, 
+  /*AFB0:*/ 0x04, 0x08, 0x10, 0x20, 0x40, 0x7C, 0x00, 0x00, 0x1C, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1C, 0x00, 
+  /*AFC0:*/ 0x00, 0x40, 0x40, 0x20, 0x10, 0x08, 0x04, 0x04, 0x00, 0x00, 0x70, 0x10, 0x10, 0x10, 0x10, 0x10, 
+  /*AFD0:*/ 0x70, 0x00, 0x00, 0x10, 0x28, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  /*AFE0:*/ 0x00, 0x00, 0x00, 0x7C, 0x00, 0x18, 0x24, 0x20, 0x70, 0x20, 0x20, 0x7C, 0x00, 0x00, 0x00, 0x00, 
+  /*AFF0:*/ 0x34, 0x4C, 0x44, 0x4C, 0x34, 0x00, 0x00, 0x40, 0x40, 0x78, 0x44, 0x44, 0x44, 0x78, 0x00, 0x00, 
+  /*B000:*/ 0x00, 0x00, 0x3C, 0x40, 0x40, 0x40, 0x3C, 0x00, 0x00, 0x04, 0x04, 0x3C, 0x44, 0x44, 0x44, 0x3C, 
+  /*B010:*/ 0x00, 0x00, 0x00, 0x00, 0x38, 0x44, 0x7C, 0x40, 0x3C, 0x00, 0x00, 0x18, 0x24, 0x20, 0x70, 0x20, 
+  /*B020:*/ 0x20, 0x20, 0x00, 0x00, 0x00, 0x00, 0x38, 0x44, 0x44, 0x44, 0x3C, 0x04, 0x38, 0x40, 0x40, 0x78, 
+  /*B030:*/ 0x44, 0x44, 0x44, 0x44, 0x00, 0x00, 0x10, 0x00, 0x10, 0x10, 0x10, 0x10, 0x08, 0x00, 0x00, 0x10, 
+  /*B040:*/ 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x20, 0x40, 0x40, 0x44, 0x48, 0x70, 0x48, 0x44, 0x00, 
+  /*B050:*/ 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x08, 0x00, 0x00, 0x00, 0x00, 0x68, 0x54, 0x54, 0x54, 
+  /*B060:*/ 0x54, 0x00, 0x00, 0x00, 0x00, 0x78, 0x44, 0x44, 0x44, 0x44, 0x00, 0x00, 0x00, 0x00, 0x38, 0x44, 
+  /*B070:*/ 0x44, 0x44, 0x38, 0x00, 0x00, 0x00, 0x00, 0x78, 0x44, 0x44, 0x44, 0x78, 0x40, 0x40, 0x00, 0x00, 
+  /*B080:*/ 0x3C, 0x44, 0x44, 0x44, 0x3C, 0x04, 0x04, 0x00, 0x00, 0x58, 0x64, 0x40, 0x40, 0x40, 0x00, 0x00, 
+  /*B090:*/ 0x00, 0x00, 0x38, 0x40, 0x38, 0x04, 0x38, 0x00, 0x00, 0x10, 0x10, 0x38, 0x10, 0x10, 0x10, 0x0C, 
+  /*B0A0:*/ 0x00, 0x00, 0x00, 0x00, 0x44, 0x44, 0x44, 0x44, 0x3C, 0x00, 0x00, 0x00, 0x00, 0x44, 0x44, 0x44, 
+  /*B0B0:*/ 0x28, 0x10, 0x00, 0x00, 0x00, 0x00, 0x44, 0x44, 0x44, 0x54, 0x28, 0x00, 0x00, 0x00, 0x00, 0x44, 
+  /*B0C0:*/ 0x28, 0x10, 0x28, 0x44, 0x00, 0x00, 0x00, 0x00, 0x44, 0x44, 0x44, 0x44, 0x3C, 0x04, 0x38, 0x00, 
+  /*B0D0:*/ 0x00, 0x7C, 0x08, 0x10, 0x20, 0x7C, 0x00, 0x00, 0x08, 0x10, 0x10, 0x20, 0x10, 0x10, 0x08, 0x00, 
+  /*B0E0:*/ 0x00, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x20, 0x10, 0x10, 0x08, 0x10, 0x10, 
+  /*B0F0:*/ 0x20, 0x00, 0x00, 0x14, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x38, 0x44, 0x5C, 0x64, 
+  /*B100:*/ 0x5C, 0x44, 0x38, 0x00, 0x00, 0x00
+
+	/*B106:*/ 0x7F, 0x40, 0x54, 0x28, 0x54, 0x28, 0x54, 0x28, 0x54, 0x28, 
+  /*B110:*/ 0x54, 0x44, 0x00, 0x34, 0x4C, 0x44, 0x4C, 0x34, 0x00, 0x00, 0x14, 0x28, 0x00, 0x3C, 0x44, 0x4C, 
+  /*B120:*/ 0x34, 0x00, 0x00, 0x10, 0x28, 0x10, 0x3C, 0x44, 0x4C, 0x34, 0x00, 0x00, 0x08, 0x10, 0x38, 0x44, 
+  /*B130:*/ 0x7C, 0x40, 0x3C, 0x00, 0x00, 0x44, 0x00, 0x38, 0x44, 0x44, 0x44, 0x38, 0x00, 0x00, 0x14, 0x28, 
+  /*B140:*/ 0x00, 0x38, 0x44, 0x44, 0x38, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x4C, 0x54, 0x64, 0x78, 0x00, 0x00, 
+  /*B150:*/ 0x44, 0x00, 0x00, 0x44, 0x44, 0x44, 0x3C, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x40, 0x40, 0x40, 0x3C, 
+  /*B160:*/ 0x10, 0x20, 0x14, 0x28, 0x00, 0x78, 0x44, 0x44, 0x44, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x14, 0x3C, 
+  /*B170:*/ 0x50, 0x3C, 0x00, 0x00, 0x00, 0x00, 0x2C, 0x50, 0x5C, 0x50, 0x2C, 0x00, 0x00, 0x08, 0x10, 0x34, 
+  /*B180:*/ 0x4C, 0x44, 0x4C, 0x34, 0x00, 0x00, 0x20, 0x10, 0x34, 0x4C, 0x44, 0x4C, 0x34, 0x00, 0x00, 0x10, 
+  /*B190:*/ 0x28, 0x00, 0x3C, 0x44, 0x4C, 0x34, 0x00, 0x00, 0x44, 0x00, 0x38, 0x44, 0x7C, 0x40, 0x3C, 0x00, 
+  /*B1A0:*/ 0x00, 0x20, 0x10, 0x38, 0x44, 0x7C, 0x40, 0x3C, 0x00, 0x00, 0x10, 0x28, 0x38, 0x44, 0x7C, 0x40, 
+  /*B1B0:*/ 0x3C, 0x00, 0x00, 0x44, 0x00, 0x00, 0x10, 0x10, 0x10, 0x08, 0x00, 0x00, 0x08, 0x10, 0x00, 0x10, 
+  /*B1C0:*/ 0x10, 0x10, 0x08, 0x00, 0x00, 0x20, 0x10, 0x00, 0x10, 0x10, 0x10, 0x08, 0x00, 0x00, 0x10, 0x28, 
+  /*B1D0:*/ 0x00, 0x10, 0x10, 0x10, 0x08, 0x00, 0x00, 0x08, 0x10, 0x38, 0x44, 0x44, 0x44, 0x38, 0x00, 0x00, 
+  /*B1E0:*/ 0x20, 0x10, 0x38, 0x44, 0x44, 0x44, 0x38, 0x00, 0x00, 0x10, 0x28, 0x00, 0x38, 0x44, 0x44, 0x38, 
+  /*B1F0:*/ 0x00, 0x00, 0x08, 0x10, 0x44, 0x44, 0x44, 0x44, 0x3C, 0x00, 0x00, 0x20, 0x10, 0x44, 0x44, 0x44, 
+  /*B200:*/ 0x44, 0x3C, 0x00, 0x00, 0x10, 0x28, 0x00, 0x44, 0x44, 0x44, 0x3C, 0x00, 0x00, 0x38, 0x44, 0x44, 
+  /*B210:*/ 0x58, 0x44, 0x44, 0x58, 0x40, 0x40, 0x00, 0x08, 0x3C, 0x48, 0x48, 0x48, 0x3C, 0x08, 0x00, 0x44, 
+  /*B220:*/ 0x44, 0x28, 0x10, 0x7C, 0x10, 0x38, 0x00, 0x00, 0x20, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  /*B230:*/ 0x00, 0x44, 0x10, 0x28, 0x44, 0x7C, 0x44, 0x44, 0x00, 0x00, 0x14, 0x28, 0x10, 0x28, 0x44, 0x7C, 
+  /*B240:*/ 0x44, 0x00, 0x00, 0x10, 0x28, 0x10, 0x28, 0x44, 0x7C, 0x44, 0x00, 0x00, 0x08, 0x10, 0x7C, 0x40, 
+  /*B250:*/ 0x7C, 0x40, 0x7C, 0x00, 0x00, 0x44, 0x38, 0x44, 0x44, 0x44, 0x44, 0x38, 0x00, 0x00, 0x14, 0x28, 
+  /*B260:*/ 0x38, 0x44, 0x44, 0x44, 0x38, 0x00, 0x00, 0x34, 0x44, 0x4C, 0x54, 0x64, 0x44, 0x58, 0x00, 0x00, 
+  /*B270:*/ 0x44, 0x00, 0x44, 0x44, 0x44, 0x44, 0x38, 0x00, 0x00, 0x38, 0x44, 0x40, 0x40, 0x44, 0x38, 0x10, 
+  /*B280:*/ 0x20, 0x00, 0x38, 0x00, 0x44, 0x64, 0x54, 0x4C, 0x44, 0x00, 0x00, 0x3C, 0x48, 0x48, 0x7C, 0x48, 
+  /*B290:*/ 0x48, 0x4C, 0x00, 0x00, 0x3C, 0x48, 0x48, 0x4C, 0x48, 0x48, 0x3C, 0x00, 0x00, 0x00, 0x00, 0x24, 
+  /*B2A0:*/ 0x58, 0x48, 0x58, 0x24, 0x00, 0x00, 0x38, 0x44, 0x40, 0x38, 0x44, 0x44, 0x38, 0x00, 0x00, 0x38, 
+  /*B2B0:*/ 0x44, 0x44, 0x7C, 0x44, 0x44, 0x38, 0x00, 0x00, 0x40, 0x20, 0x20, 0x10, 0x18, 0x28, 0x44, 0x00, 
+  /*B2C0:*/ 0x00, 0x00, 0x00, 0x44, 0x44, 0x44, 0x64, 0x5C, 0x40, 0x40, 0x00, 0x00, 0x3C, 0x68, 0x28, 0x28, 
+  /*B2D0:*/ 0x28, 0x00, 0x00, 0x10, 0x10, 0x38, 0x54, 0x54, 0x54, 0x38, 0x10, 0x10, 0x10, 0x00, 0x10, 0x10, 
+  /*B2E0:*/ 0x10, 0x10, 0x10, 0x00, 0x00, 0x10, 0x00, 0x10, 0x20, 0x40, 0x44, 0x38, 0x00, 0x00, 0x38, 0x44, 
+  /*B2F0:*/ 0x04, 0x38, 0x40, 0x44, 0x38, 0x00, 0x10, 0x38, 0x44, 0x40, 0x38, 0x44, 0x38, 0x04, 0x44, 0x38, 
+  /*B300:*/ 0x00, 0x44, 0x38, 0x44, 0x44, 0x38, 0x44, 0x00, 0x00, 0x00, 0x14, 0x28, 0x50, 0x28, 0x14, 0x00, 
+  /*B310:*/ 0x00, 0x00, 0x00, 0x50, 0x28, 0x14, 0x28, 0x50, 0x00, 0x00, 0x00, 0x10, 0x28, 0x10, 0x00, 0x00, 
+  /*B320:*/ 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x7C, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 
+  /*B330:*/ 0x30, 0x7C, 0x30, 0x10, 0x00, 0x00, 0x00, 0x00, 0x10, 0x18, 0x7C, 0x18, 0x10, 0x00, 0x00, 0x00, 
+  /*B340:*/ 0x10, 0x38, 0x7C, 0x10, 0x10, 0x10, 0x10, 0x00, 0x00, 0x10, 0x10, 0x10, 0x10, 0x7C, 0x38, 0x10, 
+  /*B350:*/ 0x00, 
+
+
 ;Keyboard decoding. Use IPC data and multiple return outcome mechanism to
 ;translate keyboard matrix key pressed to corresponding QL key code action.
 
@@ -18339,11 +18563,33 @@ LB446   clr.w   d1                              ;key has no meaning/not found
         rts
 
 LB450   movem.l (a7)+,d3-d5/a3
-        addq.l  #4,(a7)                         ;return to third outcome
-        rts
+   454     addq.l  #4,(a7)                         ;return to third outcome
+   456     rts
 
 ;--------------------------------------
-LB458   include key_codes
+LB458   include key_codes (256+20 bytes)
+
+  /*B458:*/ 0x00, 0x0C, 0x00, 0x8A, 0x00, 0x4B, 0x00, 0xC9, 
+  /*B460:*/ 0x01, 0x08, 0x01, 0x12, 0x03, 0x3F, 
+						0x78/*X*/, 0x76, 0x2F, 0x6E, 0x2C, 0x38, 0x32, 0x36, 0x71, 0x65,			// x=12 in tabella @B458 ossia B466, seguono di seguito gli altri
+  /*B470:*/ 0x30, 0x74, 0x75, 0x39, 0x77, 0x69, 0x09, 0x72, 0x2D, 0x79, 0x6F, 0x6C, 0x33, 0x68, 0x31, 0x61, 
+  /*B480:*/ 0x70, 0x64, 0x6A, 0x5B, 0xE0, 0x6B, 0x73, 0x66, 0x3D, 0x67, 0x3B, 0x5D, 0x7A, 0x2E, 0x63, 0x62, 
+  /*B490:*/ 0x60, 0x6D, 0x27, 0x0A,		// Enter=@0xb493=45 dopo x
+						0xC0, 0xD0, 0x1B, 0xC8, 0x5C, 0x20, 0xD8, 0xF4, 0xE8, 0x35, 0xEC, 0xF0, 
+  /*B4A0:*/ 0xF8, 0x34, 0x37, 0x03, 0x3F, 0x58, 0x56, 0x3F, 0x4E, 0x3C, 0x2A, 0x40, 0x5E, 0x51, 0x45, 0x29, 
+  /*B4B0:*/ 0x54, 0x55, 0x28, 0x57, 0x49, 0xFD, 0x52, 0x5F, 0x59, 0x4F, 0x4C, 0x23, 0x48, 0x21, 0x41, 0x50, 
+  /*B4C0:*/ 0x44, 0x4A, 0x7B, 0xE0, 0x4B, 0x53, 0x46, 0x2B, 0x47, 0x3A, 0x7D, 0x5A, 0x3E, 0x43, 0x42, 0x7E, 
+  /*B4D0:*/ 0x4D, 0x22, 0xFE, 0xC4, 0xD4, 0x7F, 0xCC, 0x7C, 0xFC, 0xDC, 0xF6, 0xEA, 0x25, 0xEE, 0xF2, 0xFA, 
+  /*B4E0:*/ 0x24, 0x26, 0x03, 0x3F, 0x18, 0x16, 0x8F, 0x0E, 0x8C, 0x98, 0x92, 0x96, 0x11, 0x05, 0x90, 0x14, 
+  /*B4F0:*/ 0x15, 0x99, 0x17, 0x09, 0x09, 0x12, 0x8D, 0x19, 0x0F, 0x0C, 0x93, 0x08, 0x91, 0x01, 0x10, 0x04, 
+  /*B500:*/ 0x0A, 0xBB, 0xE2, 0x0B, 0x13, 0x06, 0x9D, 0x07, 0x9B, 0xBD, 0x1A, 0x8E, 0x03, 0x02, 0x00, 0x0D, 
+  /*B510:*/ 0x87, 0x0A, 0xC2, 0xD2, 0x80, 0xCA, 0xBC, 0x00, 0xDA, 0xF5, 0xE9, 0x95, 0xED, 0xF1, 0xF9, 0x94, 
+  /*B520:*/ 0x97, 0x03, 0x3F, 0xB8, 0xB6, 0x9F, 0xAE, 0x9C, 0x8A, 0xA0, 0xBE, 0xB1, 0xA5, 0x89, 0xB4, 0xB5, 
+  /*B530:*/ 0x88, 0xB7, 0xA9, 0xFD, 0xB2, 0xBF, 0xB9, 0xAF, 0xAC, 0x83, 0xA8, 0x81, 0xA1, 0xB0, 0xA4, 0xAA, 
+  /*B540:*/ 0x1B, 0xE6, 0xAB, 0xB3, 0xA6, 0x8B, 0xA7, 0x9A, 0x1D, 0xBA, 0x9E, 0xA3, 0xA2, 0x1E, 0xAD, 0x82, 
+  /*B550:*/ 0xFE, 0xC6, 0xD6, 0x1F, 0xCE, 0x1C, 0x00, 0xDE, 0xF7, 0xEB, 0x85, 0xEF, 0xF3, 0xFB, 0x84, 0x86, 
+  /*B560:*/ 0x21, 0xE0, 0x31, 0xC0, 0x32, 0xD0, 0x34, 0xC8, 0x37, 0xD8, 0x00, 0x00, 
+
 ;--------------------------------------
 
 ;Translate d1.b and if required put translation into serial transmit queue at a2
