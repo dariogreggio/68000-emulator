@@ -1094,9 +1094,9 @@ L08FC   bra     L03A4                   ;return from trap err.ok
 
 ;Frame interrupt handler
 
-L0900   addq.w  #1,sv_pollm(a6)         ;increment missed polls counter
+L0900   addq.w  #1,sv_pollm(a6)         ;increment missed polls counter			$30
         bvc.s   L090A                   ; < 32768 no overflow
-        subq.w  #1,sv_pollm(a6)         ;ceiling is 32767
+        subq.w  #1,sv_pollm(a6)         ;ceiling is 32767					$30
 L090A   movem.l d0-d6/a0-a4,-(a7)				0xE748, 0xF8FE
    90e     moveq   #-sv_lpoll,d0      0xF870     ;offset to linkage base
    910     moveq   #1,d3              0x0176     ;this is a poll call
@@ -1109,9 +1109,9 @@ L090A   movem.l d0-d6/a0-a4,-(a7)				0xE748, 0xF8FE
    92c     btst    #5,trlv_sr(a7)    0x2F08, 0x0500, 0x0c00      ;called in supervisor mode ?
    932     bne     L03B6             0x0066, 0x82FA      ;yes, skip scheduler list (poll missed)
 L0936   jsr     L09D4(pc)         0xBA4E, 0x9C00,      ;save current job details
-L093A   move.w  sv_pollm(a6),d3         ;accumulated/lost polls
-        clr.w   sv_pollm(a6)            ;reset counter
-        addq.w  #1,sv_rand(a6)          ;increment random number
+L093A   move.w  sv_pollm(a6),d3         ;accumulated/lost polls			$30
+   93c     clr.w   sv_pollm(a6)            ;reset counter				$30
+        addq.w  #1,sv_rand(a6)          ;increment random number			$2e
         moveq   #-sv_lschd,d0           ;offset to linkage base
         movea.l sv_shlst(a6),a0         ;scheduler interrupt list
         jsr     L0A9E(pc)               ;call each routine in list
@@ -5850,7 +5850,7 @@ L32F4   movem.l d1-d7/a1-a6,-(a7)
    331a     tst.l   d0
    331c     bne.s   L334C                   ;unsuccesful open
 L331E   move.l  a0,(a3)                 ;definition address to table entry
-   3320     move.w  sv_chtag(a6),d2         ;new tag for channel
+   3320     move.w  sv_chtag(a6),d2      0x2E34, 0x7000   ;new tag for channel   $70
    3324     addq.w  #1,sv_chtag(a6)
    3328     addq.w  #4,a0
    332a     move.l  a2,(a0)+                ;ch_drivr
@@ -5860,13 +5860,13 @@ L331E   move.l  a0,(a3)                 ;definition address to table entry
    3332     clr.w   (a0)+                   ;ch_stat & ch_actn
    3334     clr.l   (a0)+                   ;ch_jobwt
    3336     swap    d2
-   3338     suba.l  sv_chbas(a6),a3
+   3338     suba.l  sv_chbas(a6),a3							$78
    333c     move.w  a3,d2
    333e     lsr.w   #2,d2                   ;channel number
-   333e     movea.l d2,a0                   ;channel ID returned
-   3340     cmp.w   sv_chmax(a6),d2         ;highest channel ?
-   3344     bls.s   L334C                   ;no
-   3346     move.w  d2,sv_chmax(a6)         ;update highest
+   3340     movea.l d2,a0                   ;channel ID returned
+   3342     cmp.w   sv_chmax(a6),d2         ;highest channel ?				pos $72 = 3 al terzo giro
+   3346     bls.s   L334C                   ;no
+   3348     move.w  d2,sv_chmax(a6)         ;update highest
 L334C   movem.l (a7)+,a1-a4
         bra.s   L3378                   ;return from trap
 

@@ -166,7 +166,7 @@ BYTE GetValue(DWORD t) {
       case 2:        //   Transmit control
         break;
         
-      case 3:        //   IPC Wr
+      case 3:        //   IPC Rd
         i=IPCW;     // mah dice qua solo WR..  scrive 0x0e, pare
         // (tastiera ecc va qua...)  scrive 4 o 8 bit, data 1=$0E or 0=$0C
 //				IPCCnt++;
@@ -629,6 +629,7 @@ void PutValue(DWORD t,BYTE t1) {
                       IPCState=0;
                       break;
                     }
+                  IPCData = (IPCData >> 1) | (IPCData & 0x1 ? 0x80 : 0);  // ROTate perché sono avanti di 1 (v.sopra)
                   }
                 }
               break;
@@ -639,7 +640,7 @@ void PutValue(DWORD t,BYTE t1) {
                 IPCData |= t1 & 2 ? (1 << IPCCnt) : 0;
                 if(!IPCCnt) {
                   // usare il valore... gestire
-                  IPCW=255;
+                  IPCW=255; IPCCnt=4;
                   }
                 }
               break;
@@ -670,27 +671,28 @@ void PutValue(DWORD t,BYTE t1) {
                     default /*255*/:      // qua ci passiamo anche quando scrive (primo giro) per creare IPCW..
                       break;
                     }
+                  IPCData = (IPCData >> 1) | (IPCData & 0x1 ? 0x80 : 0);  // ROTate perché sono avanti di 1 (v.sopra)
                   }
                 else {
-                  IPCData <<= 1;
+                  IPCData = (IPCData << 1) | (IPCData & 0x80 ? 1 : 0);  // ROTate perché sono avanti di 1 (v.sopra)
                   switch(IPCW) {
                     case 0x01:      // read status
                       IPCCnt--;
                       if(!IPCCnt) {
-                        IPCW=0;
+                        IPCW=255; IPCCnt=4;
                         }
                       break;
                     case 0x06:      // read serial 1
                       IPCCnt--;
                       if(!IPCCnt) {
-                        IPCW=0;
+                        IPCW=255; IPCCnt=4;
                         IPCState++;     // GESTIRE Stati poi
                         }
                       break;
                     case 0x07:      // read serial 2
                       IPCCnt--;
                       if(!IPCCnt) {
-                        IPCW=0;
+                        IPCW=255; IPCCnt=4;
                         IPCState++;     // GESTIRE Stati poi
                         }
                       break;
@@ -702,7 +704,7 @@ void PutValue(DWORD t,BYTE t1) {
                             if(Keyboard[2] & 7)     // se non ci sono tasti, smetto subito
                               IPCState++;
                             else {
-                              IPCW=0;
+                              IPCW=255; IPCCnt=4;
                               IPCState=0;
   //                              Keyboard[0]=Keyboard[1]=Keyboard[2]=0;
                               }
@@ -717,7 +719,7 @@ void PutValue(DWORD t,BYTE t1) {
                         case 2:
                           IPCCnt--;
                           if(!IPCCnt) {
-                            IPCW=0;
+                            IPCW=255; IPCCnt=4;
                             IPCState=0;
   //                              Keyboard[0]=Keyboard[1]=Keyboard[2]=0;
                             }
@@ -730,7 +732,7 @@ void PutValue(DWORD t,BYTE t1) {
                     case 0x0d:      // read microdrive
                       IPCCnt--;
                       if(!IPCCnt) {
-                        IPCW=0;
+                        IPCW=255; IPCCnt=4;
                         IPCState=0;
                         }
                       break;
@@ -740,7 +742,7 @@ void PutValue(DWORD t,BYTE t1) {
                       if(IPCCnt) {
                         IPCCnt--;
                         if(!IPCCnt) {
-                          IPCW=0;
+                          IPCW=255; IPCCnt=4;
                           IPCState=0;
                           }
                         }
@@ -1235,6 +1237,8 @@ enum ADDRESSING_MODES {
   ABSSSUBADD  =0b000,    // è al posto di Register
   ABSLSUBADD  =0b001,    // 
   PCIDXSUBADD =0b010,    // in 68020 ci sono dei modi aggiuntivi, con questi stessi "tipi" e non si capisce come si distinguano...
+#ifdef MC68020
+#endif
   PCDISPSUBADD=0b011,    // NB tutti i pc-indexed dovrebbero essere SOLO in lettura!
   IMMSUBADD   =0b100 
   };
@@ -1287,8 +1291,12 @@ enum ADDRESSING_MODES {
         unsigned int unused: 3;
         unsigned int IRQMask: 3;
         unsigned int unused2: 2;    // su 68020 ecc qua c'è Master/Interrupt
+#ifdef MC68020
+#endif
         unsigned int Supervisor: 1;
         unsigned int unused3: 1;    // su 68020 ecc questo è Trace0 e il seg. Trace1
+#ifdef MC68020
+#endif
         unsigned int Trace: 1;
         };
       } SR;
@@ -1333,7 +1341,7 @@ int c=0;
       VICRaster+=8;     // 
       if(VICRaster>=256) {
         VICRaster=0;
-        if(1 /*dov'è?? */)
+        if(0 /*dov'è?? */)
           VIDIRQ=1;
         }
 #else
@@ -1421,7 +1429,9 @@ int c=0;
       _f.SR.Supervisor=1;     // non mi è chiaro se sono nested o no...
       regsA.r[7].x=a7S;
       _f.SR.Trace=0;   // supervisor, area programma VERIFICARE solo >68020?
+#ifdef MC68020
 //      _f.SR.MasterInterrupt=1;   // supervisor, area programma VERIFICARE solo >68020?
+#endif
       _f.SR.IRQMask=IPL;
       DoStop=0;
       _sp-=4;
@@ -2448,6 +2458,7 @@ aggFlagS:
               }
             else
               _f.CCR.Ovf=0;
+//	           _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
@@ -2461,6 +2472,7 @@ aggFlagS:
               }
             else
               _f.CCR.Ovf=0;
+//						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
             break;
           case DWORD_SIZE:
 aggFlagS4:
@@ -2475,6 +2487,7 @@ aggFlagS4:
               }
             else
               _f.CCR.Ovf=0;
+//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
             break;
           }
         _f.CCR.Ext=_f.CCR.Carry;
@@ -2731,26 +2744,32 @@ aggFlagA:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
             _f.CCR.Carry=!!(res3.b.h);
-		        _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x80) != !!(((res1.w & 0x80) + (res2.w & 0x80)) & 0x100);
+//		        _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x80) != !!(((res1.w & 0x80) + (res2.w & 0x80)) & 0x100);
 //		        _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x40) != !!(((res1.b.l & 0x80) + (res2.b.l & 0x80)) & 0x80);
+//		        _f.CCR.Ovf= !!(res3.b.h & 0x1) != !!(res3.b.l & 0x80);
+	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
             _f.CCR.Sign=!!(res3.w & 0x8000);
             _f.CCR.Carry=!!(HIWORD(res3.x));
-            _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x80) != !!(((res1.x & 0x8000) + (res2.x & 0x8000)) & 0x10000);
+//            _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x80) != !!(((res1.x & 0x8000) + (res2.x & 0x8000)) & 0x10000);
 //            _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x40) != !!(((res1.b.h & 0x80) + (res2.b.h & 0x80)) & 0x80);
+//		        _f.CCR.Ovf= !!(res3.x & 0x10000) != !!(res3.w & 0x8000);
+						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
             break;
           case DWORD_SIZE:
 aggFlagA4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
             _f.CCR.Carry=!!(((unsigned long long)res1.x + (unsigned long long)res2.x) >> 32);
-            _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
-                    !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000);
+//            _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
+//                    !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000);
             // credo sia meglio di usare QWORD longlong...
 //            _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x40000000) != 
 //                    !!(((res1.x & 0x80000000) + (res2.x & 0x80000000)) & 0x80000000);
+//		        _f.CCR.Ovf= !!(((unsigned long long)res1.x + (unsigned long long)res2.x) & 0x100000000ULL) != !!(res3.x & 0x80000000);
+	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
             break;
           }
         _f.CCR.Ext=_f.CCR.Carry;
@@ -3191,6 +3210,7 @@ aggFlagC:
               }
             else
               _f.CCR.Ovf=0;
+//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
@@ -3204,6 +3224,7 @@ aggFlagC:
               }
             else
               _f.CCR.Ovf=0;
+//						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
             break;
           case DWORD_SIZE:
 aggFlagC4:
@@ -3218,6 +3239,7 @@ aggFlagC4:
               }
             else
               _f.CCR.Ovf=0;
+//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
             break;
           }
 // qua X non toccato
@@ -3515,7 +3537,7 @@ aggFlagC4:
             res3.w = WORKING_REG_D.w.l;
             break;
           case ADDRREGADD:   // An
-						// qua no!
+            res3.w = WORKING_REG_A.w.l;
             break;
           case ADDRADD:   // (An)
             res3.w = GetShortValue(WORKING_REG_A.x);
@@ -3866,6 +3888,7 @@ aggFlagSX:
               }
             else
               _f.CCR.Ovf=0;
+//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
@@ -3879,6 +3902,7 @@ aggFlagSX:
               }
             else
               _f.CCR.Ovf=0;
+//						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
             break;
           case DWORD_SIZE:
             _f.CCR.Zero=!res3.x;
@@ -3892,6 +3916,7 @@ aggFlagSX:
               }
             else
               _f.CCR.Ovf=0;
+//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
             break;
           }
         _f.CCR.Ext=_f.CCR.Carry;
@@ -7875,13 +7900,13 @@ do_bra:
             case DATAREGADD:   // Dn
               switch(OPERAND_SIZE) {
                 case BYTE_SIZE:
-                  res3.b.l = DEST_REG_D.b.b0 ^= WORKING_REG_D.b.b0;
+                  res3.b.l = WORKING_REG_D.b.b0 ^ DEST_REG_D.b.b0;
                   break;
                 case WORD_SIZE:
-                  res3.w = DEST_REG_D.w.l ^= WORKING_REG_D.w.l;
+                  res3.w = WORKING_REG_D.w.l ^= DEST_REG_D.w.l;
                   break;
                 case DWORD_SIZE:
-                  res3.x = DEST_REG_D.x ^= WORKING_REG_D.x;
+                  res3.x = WORKING_REG_D.x ^= DEST_REG_D.x;
                   break;
                 }
               break;
@@ -8275,7 +8300,9 @@ do_bra:
 			case 0xcd:
 			case 0xcf:
         if(OPERAND_SIZE == SIZE_ELSE) {    // MULU MULS
+#ifdef MC68020
 // "forse" in 68020 ecc c'è anche una versione 32x32bit... (per cui qua non c'è OVF ma là forse sì..
+#endif
           res1.w=DEST_REG_D.w.l;
           switch(ADDRESSING) {
             case ABSOLUTEADD:
@@ -9167,25 +9194,31 @@ aggFlagAX:
                     _f.CCR.Zero=!res3.b.l;
                     _f.CCR.Sign=!!(res3.b.l & 0x80);
                     _f.CCR.Carry=!!(res3.b.h);
-                    _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x80) != !!(((res1.w & 0x80) + (res2.w & 0x80)) & 0x100);
+//                    _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x80) != !!(((res1.w & 0x80) + (res2.w & 0x80)) & 0x100);
 //        		        _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x40) != !!(((res1.b.l & 0x80) + (res2.b.l & 0x80)) & 0x80);
+//		        _f.CCR.Ovf= !!(res3.b.h & 0x1) != !!(res3.b.l & 0x80);
+	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
                     break;
                   case WORD_SIZE:
                     _f.CCR.Zero=!res3.w;
                     _f.CCR.Sign=!!(res3.b.h & 0x80);
                     _f.CCR.Carry=!!(HIWORD(res3.x));
-                    _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x80) != !!(((res1.x & 0x8000) + (res2.x & 0x8000)) & 0x10000);
+//                    _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x80) != !!(((res1.x & 0x8000) + (res2.x & 0x8000)) & 0x10000);
 //                    _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x40) != !!(((res1.b.h & 0x80) + (res2.b.h & 0x80)) & 0x80);
+//		        _f.CCR.Ovf= !!(res3.x & 0x10000) != !!(res3.w & 0x8000);
+						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
                     break;
                   case DWORD_SIZE:
                     _f.CCR.Zero=!res3.x;
                     _f.CCR.Sign=!!(res3.x & 0x80000000);
                     _f.CCR.Carry=!!(((unsigned long long)res1.x + (unsigned long long)res2.x + _f.CCR.Ext) >> 32);
-                    _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
-                            !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000);
+//                    _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
+//                            !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000);
                     // credo sia meglio di usare QWORD longlong...
 //                    _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x40000000) != 
 //                      !!(((res1.x & 0x80000000) + (res2.x & 0x80000000)) & 0x80000000);
+//		        _f.CCR.Ovf= !!(((unsigned long long)res1.x + (unsigned long long)res2.x) & 0x100000000ULL) != !!(res3.x & 0x80000000);
+	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
                     break;
                   }
                 _f.CCR.Ext=_f.CCR.Carry;
@@ -9631,6 +9664,8 @@ aggFlagAX:
 			case 0xee:
 			case 0xef:
         if(OPERAND_SIZE == SIZE_ELSE) {
+        	union REGISTRO_F f2;
+          
           res2.b.l=1;
           switch(ADDRESSING) {
             case ABSOLUTEADD:
@@ -9689,76 +9724,77 @@ aggFlagAX:
           
           switch(HIBYTE(Pipe1) & 0b00000110) {
             case 0b000:   //ASd
-              if(ROTATE_DIRECTION)
-                res3.w = res1.w << res2.b.l;
-              else
-                res3.w = (int16_t)res1.w >> res2.b.l;
+              res3.w = res1.w;
+              while(res2.b.l) {
+                if(ROTATE_DIRECTION)
+                  res3.w <<= 1;
+                else
+                  res3.w = (int16_t)res3.w >> 1;
+                res2.b.l--;
+                }
               goto aggFlagRZO;
               break;
             case 0b010:   //LSd
-              if(ROTATE_DIRECTION)
-                res3.w = res1.w << res2.b.l;
-              else
-                res3.w = res1.w >> res2.b.l;
+              res3.w = res1.w;
+              _f.CCR.Carry=0;
+              while(res2.b.l) {
+                if(ROTATE_DIRECTION) {
+                  res3.w <<= 1;
+                  _f.CCR.Ext=_f.CCR.Carry=res3.b.h & 0x80 ? 1 : 0;
+                  }
+                else {
+                  res3.w >>= 1;
+                  _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x01;
+                  }
+                res2.b.l--;
+                }
               
               if(res2.b.l && ROTATE_DIRECTION)
                 _f.CCR.Ovf=!!((res3.b.h & 0x80) && !(res1.b.h & 0x80));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
               else
                 _f.CCR.Ovf=0;
                   
-aggFlagR:
-              if(res2.b.l) {
-                if(ROTATE_DIRECTION)  // 
-                  _f.CCR.Ext=_f.CCR.Carry=res1.b.h & 0x80 ? 1 : 0;
-                else
-                  _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x01;
-                }
-              else
-                _f.CCR.Carry=0;
               goto aggFlagRZ;
               break;
             case 0b100:   //ROXd
-              if(ROTATE_DIRECTION) {  // rotate direction
-                res3.w = res1.w << res2.b.l;
-                if(_f.CCR.Ext)
-                  res3.w |= 1;
+              res3.w = res1.w;
+              _f.CCR.Carry=_f.CCR.Ext;
+              while(res2.b.l) {
+                if(ROTATE_DIRECTION) {  // rotate direction
+                  f2.CCR.Ext=f2.CCR.Carry=res3.b.h & 0x80 ? 1 : 0;
+                  res3.w <<= 1;
+                  if(_f.CCR.Ext)
+                    res3.w |= 1;
+                  _f.CCR.Ext=f2.CCR.Ext; _f.CCR.Carry=f2.CCR.Carry;
+                  }
+                else {
+                  f2.CCR.Ext=f2.CCR.Carry=res3.b.l & 0x01;
+                  res3.w >>= 1;
+                  if(_f.CCR.Ext)
+                    res3.b.h |= 0x80;
+                  _f.CCR.Ext=f2.CCR.Ext; _f.CCR.Carry=f2.CCR.Carry;
+                  }
+                res2.b.l--;
                 }
-              else {
-                res3.w = res1.w >> res2.b.l;
-                if(_f.CCR.Ext)
-                  res3.b.h |= 0x80;
-                }
-              
-              if(res2.b.l) {
-                if(ROTATE_DIRECTION)  // 
-                  _f.CCR.Ext=_f.CCR.Carry=res1.b.h & 0x80 ? 1 : 0;
-                else
-                  _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x01;
-                }
-              else
-                _f.CCR.Carry=_f.CCR.Ext;
               goto aggFlagRZO;
               break;
             case 0b110:   //ROd
-              if(ROTATE_DIRECTION) { // rotate direction
-                res3.w = res1.w << res2.b.l;
-                if(res1.b.h & 0x80)
-                  res3.b.l |= 1;
+              res3.w = res1.w;
+              _f.CCR.Carry=0;
+              while(res2.b.l) {
+                if(ROTATE_DIRECTION) { // rotate direction
+                  _f.CCR.Carry=res3.b.h & 0x80 ? 1 : 0;
+                  res3.w <<= 1;
+                  if(res3.b.h & 0x80)
+                    res3.b.l |= 1;
+                  }
+                else {
+                  _f.CCR.Carry=res3.b.l & 0x01;
+                  res3.w >>= 1;
+                  if(res3.b.l & 1)
+                    res3.b.h |= 0x80;
+                  }
                 }
-              else {
-                res3.w = res1.w >> res2.b.l;
-                if(res1.b.l & 1)
-                  res3.b.h |= 0x80;
-                }
-              
-              if(res2.b.l) {
-                if(ROTATE_DIRECTION)
-                  _f.CCR.Carry=res1.b.h & 0x80 ? 1 : 0;
-                else
-                  _f.CCR.Carry=res1.b.l & 0x01;
-                }
-              else
-                _f.CCR.Carry=0;
               
 aggFlagRZO:
               _f.CCR.Ovf=0;
@@ -9816,6 +9852,7 @@ aggFlagRZ:
             }
           }
         else {
+        	union REGISTRO_F f2;
           if(!(Pipe1 & 0b0000000000100000)) { // i/r
             res2.b.l=(HIBYTE(Pipe1) & 0b00001110) >> 1;
             if(!res2.b.l)
@@ -9826,83 +9863,79 @@ aggFlagRZ:
             }
           switch(OPERAND_SIZE) {
             case BYTE_SIZE:
-              res1.b.l = WORKING_REG_D.b.b0;
+              res3.b.l = res1.b.l = WORKING_REG_D.b.b0;
               switch(LOBYTE(Pipe1) & 0b00011000) {
                 case 0b00000:   //ASd
-                  if(ROTATE_DIRECTION)
-                    res3.b.l = res1.b.l << res2.b.l;
-                  else
-                    res3.b.l = (signed char)res1.b.l >> res2.b.l;
-                  _f.CCR.Ovf=0;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION)
+                      res3.b.l <<= 1;
+                    else
+                      res3.b.l = (int8_t)res3.b.l >> 1;
+                    res2.b.l--;
+                    }
                   goto aggFlagRZO1;
                   break;
                 case 0b01000:   //LSd
-                  if(ROTATE_DIRECTION)
-                    res3.b.l = res1.b.l << res2.b.l;
-                  else
-                    res3.b.l = res1.b.l >> res2.b.l;
+                  _f.CCR.Carry=0;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION) {
+                      _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x80 ? 1 : 0;
+                      res3.b.l <<= 1;
+                      }
+                    else {
+                      _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x01;
+                      res3.b.l >>= 1;
+                      }
+                    res2.b.l--;
+                    }
                   
                   if(res2.b.l && ROTATE_DIRECTION)
                     _f.CCR.Ovf=!!((res3.b.l & 0x80) && !(res1.b.l & 0x80));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
                   else
                     _f.CCR.Ovf=0;
                   
-                  if(res2.b.l) {
-                    if(ROTATE_DIRECTION)  // 
-                      _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x80 ? 1 : 0;
-                    else
-                      _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x01;
-                    }
-                  else {
-                    _f.CCR.Carry=0;
-                    }
                   goto aggFlagRZ1;
                   break;
                 case 0b10000:   //ROXd
-                  if(ROTATE_DIRECTION) {  // rotate direction
-                    res3.b.l = res1.b.l << res2.b.l;
-                    if(_f.CCR.Ext)
-                      res3.b.l |= 1;
-                    }
-                  else {
-                    res3.b.l = res1.b.l >> res2.b.l;
-                    if(_f.CCR.Ext)
-                      res3.b.l |= 0x80;
+                  _f.CCR.Carry=_f.CCR.Ext;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION) {  // rotate direction
+                      f2.CCR.Ext=f2.CCR.Carry=res3.b.l & 0x80 ? 1 : 0;
+                      res3.b.l <<= 1;
+                      if(_f.CCR.Ext)
+                        res3.b.l |= 1;
+                      _f.CCR.Ext=f2.CCR.Ext; _f.CCR.Carry=f2.CCR.Carry;
+                      }
+                    else {
+                      f2.CCR.Ext=f2.CCR.Carry=res3.b.l & 0x01;
+                      res3.b.l >>= 1;
+                      if(_f.CCR.Ext)
+                        res3.b.l |= 0x80;
+                      _f.CCR.Ext=f2.CCR.Ext; _f.CCR.Carry=f2.CCR.Carry;
+                      }
+                    res2.b.l--;
                     }
                   
-aggFlagRX1:
-                  if(res2.b.l) {
-                    if(ROTATE_DIRECTION)  // 
-                      _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x80 ? 1 : 0;
-                    else
-                      _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x01;
-                    }
-                  else {
-                    _f.CCR.Carry=_f.CCR.Ext;
-                    }
                   goto aggFlagRZO1;
                   break;
                 case 0b11000:   //ROd
-                  if(ROTATE_DIRECTION) { // rotate direction
-                    res3.b.l = res1.b.l << res2.b.l;
-                    if(_f.CCR.Carry)
-                      res3.b.l |= 1;
-                    }
-                  else {
-                    res3.b.l = res1.b.l >> res2.b.l;
-                    if(_f.CCR.Carry)
-                      res3.b.l |= 0x80;
+                  _f.CCR.Carry=0;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION) { // rotate direction
+                      _f.CCR.Carry=res3.b.l & 0x80 ? 1 : 0;
+                      res3.b.l <<= 1;
+                      if(_f.CCR.Carry)
+                        res3.b.l |= 1;
+                      }
+                    else {
+                      _f.CCR.Carry=res3.b.l & 0x01;
+                      res3.b.l >>= 1;
+                      if(_f.CCR.Carry)
+                        res3.b.l |= 0x80;
+                      }
+                    res2.b.l--;
                     }
                   
-                  if(res2.b.l) {
-                    if(ROTATE_DIRECTION)
-                      _f.CCR.Carry=res1.b.l & 0x80 ? 1 : 0;
-                    else
-                      _f.CCR.Carry=res1.b.l & 0x01;
-                    }
-                  else
-                    _f.CCR.Carry=0;
-              
 aggFlagRZO1:
                   _f.CCR.Ovf = 0;
 
@@ -9914,81 +9947,79 @@ aggFlagRZ1:
                 }
               break;
             case WORD_SIZE:
-              res1.w=WORKING_REG_D.w.l;
+              res3.w = res1.w = WORKING_REG_D.w.l;
               switch(LOBYTE(Pipe1) & 0b00011000) {
                 case 0b00000:   //ASd
-                  if(ROTATE_DIRECTION)
-                    res3.w = res1.w << res2.b.l;
-                  else
-                    res3.w = (int16_t)res1.w >> res2.b.l;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION)
+                      res3.w <<= 1;
+                    else
+                      res3.w = (int16_t)res3.w >> 1;
+                    res2.b.l--;
+                    }
                   goto aggFlagRZO2;
                   break;
                 case 0b01000:   //LSd
-                  if(ROTATE_DIRECTION)
-                    res3.w = res1.w << res2.b.l;
-                  else
-                    res3.w = res1.w >> res2.b.l;
+                  _f.CCR.Carry=0;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION) {
+                      _f.CCR.Ext=_f.CCR.Carry=res3.b.h & 0x80 ? 1 : 0;
+                      res3.w <<= 1;
+                      }
+                    else {
+                      _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x01;
+                      res3.w >>= 1;
+                      }
+                    res2.b.l--;
+                    }
                   
                   if(res2.b.l && ROTATE_DIRECTION)
                     _f.CCR.Ovf=!!((res3.b.h & 0x80) && !(res1.b.h & 0x80));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
                   else
                     _f.CCR.Ovf=0;
                   
-                  if(res2.b.l) {
-                    if(ROTATE_DIRECTION)  // 
-                      _f.CCR.Ext=_f.CCR.Carry=res1.b.h & 0x80 ? 1 : 0;
-                    else
-                      _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x01;
-                    }
-                  else {
-                    _f.CCR.Carry=0;
-                    }
                   goto aggFlagRZ2;
                   break;
                 case 0b10000:   //ROXd
-                  if(ROTATE_DIRECTION) {  // rotate direction
-                    res3.w = res1.w << res2.b.l;
-                    if(_f.CCR.Ext)
-                      res3.w |= 1;
-                    }
-                  else {
-                    res3.w = res1.w >> res2.b.l;
-                    if(_f.CCR.Ext)
-                      res3.w |= 0x8000;
+                  _f.CCR.Carry=_f.CCR.Ext;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION) {  // rotate direction
+                      f2.CCR.Ext=f2.CCR.Carry=res3.b.h & 0x80 ? 1 : 0;
+                      res3.w <<= 1;
+                      if(_f.CCR.Ext)
+                        res3.b.l |= 1;
+                      _f.CCR.Ext=f2.CCR.Ext; _f.CCR.Carry=f2.CCR.Carry;
+                      }
+                    else {
+                      f2.CCR.Ext=f2.CCR.Carry=res3.b.l & 0x01;
+                      res3.w >>= 1;
+                      if(_f.CCR.Ext)
+                        res3.b.h |= 0x80;
+                      _f.CCR.Ext=f2.CCR.Ext; _f.CCR.Carry=f2.CCR.Carry;
+                      }
+                    res2.b.l--;
                     }
                   
-aggFlagRX2:
-                  if(res2.b.l) {
-                    if(ROTATE_DIRECTION)  // 
-                      _f.CCR.Ext=_f.CCR.Carry=res1.b.h & 0x80 ? 1 : 0;
-                    else
-                      _f.CCR.Ext=_f.CCR.Carry=res1.b.l & 0x01;
-                    }
-                  else {
-                    _f.CCR.Carry=_f.CCR.Ext;
-                    }
                   goto aggFlagRZO2;
                   break;
                 case 0b11000:   //ROd
-                  if(ROTATE_DIRECTION) { // rotate direction
-                    res3.w = res1.w << res2.b.l;
-                    if(_f.CCR.Carry)
-                      res3.w |= 1;
-                    }
-                  else {
-                    res3.w = res1.w >> res2.b.l;
-                    if(_f.CCR.Carry)
-                      res3.b.h |= 0x80;
+                  _f.CCR.Carry=0;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION) { // rotate direction
+                      _f.CCR.Carry=res3.b.h & 0x80 ? 1 : 0;
+                      res3.w <<= 1;
+                      if(_f.CCR.Carry)
+                        res3.b.l |= 1;
+                      }
+                    else {
+                      _f.CCR.Carry=res3.b.l & 0x01;
+                      res3.w >>= 1;
+                      if(_f.CCR.Carry)
+                        res3.b.h |= 0x80;
+                      }
+                    res2.b.l--;
                     }
                   
-                  if(res2.b.l) {
-                    if(ROTATE_DIRECTION)  // 
-                      _f.CCR.Carry=res1.b.h & 0x80 ? 1 : 0;
-                    else
-                      _f.CCR.Carry=res1.b.l & 0x01;
-                    }
-                  else
-                    _f.CCR.Carry=0;
 aggFlagRZO2:
                   _f.CCR.Ovf = 0;
 
@@ -9998,83 +10029,81 @@ aggFlagRZ2:
                   WORKING_REG_D.w.l = res3.w;
                   break;
                 }
-              
               break;
             case DWORD_SIZE:
-              res1.x=WORKING_REG_D.x;
+              res3.x = res1.x = WORKING_REG_D.x;
               switch(LOBYTE(Pipe1) & 0b00011000) {
                 case 0b00000:   //ASd
-                  if(ROTATE_DIRECTION)
-                    res3.x = res1.x << res2.b.l;
-                  else
-                    res3.x = (int32_t)res1.x >> res2.b.l;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION)
+                      res3.x <<= 1;
+                    else
+                      res3.x = (int32_t)res3.x >> 1;
+                    res2.b.l--;
+                    }
                   goto aggFlagRZO4;
                   break;
                 case 0b01000:   //LSd
-                  if(ROTATE_DIRECTION)
-                    res3.x = res1.x << res2.b.l;
-                  else
-                    res3.x = res1.x >> res2.b.l;
+                  _f.CCR.Carry=0;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION) {
+                      _f.CCR.Ext=_f.CCR.Carry=res3.x & 0x80000000 ? 1 : 0;
+                      res3.x <<= 1;
+                      }
+                    else {
+                      _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x01;
+                      res3.x >>= 1;
+                      }
+                    res2.b.l--;
+                    }
                   
                   if(res2.b.l && ROTATE_DIRECTION)
                     _f.CCR.Ovf=!!((res3.x & 0x80000000) && !(res1.x & 0x80000000));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
                   else
                     _f.CCR.Ovf=0;
                   
-                  if(res2.b.l) {
-                    if(ROTATE_DIRECTION)  // 
-                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x80000000 ? 1 : 0;
-                    else
-                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x00000001;
-                    }
-                  else {
-                    _f.CCR.Carry=0;
-                    }
                   goto aggFlagRZ4;
                   break;
                 case 0b10000:   //ROXd
-                  if(ROTATE_DIRECTION) {  // rotate direction
-                    res3.x = res1.x << res2.b.l;
-                    if(_f.CCR.Ext)
-                      res3.x |= 1;
-                    }
-                  else {
-                    res3.x = res1.x >> res2.b.l;
-                    if(_f.CCR.Ext)
-                      res3.x |= 0x80000000;
+                  _f.CCR.Carry=_f.CCR.Ext;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION) {  // rotate direction
+                      f2.CCR.Ext=f2.CCR.Carry=res3.x & 0x80000000 ? 1 : 0;
+                      res3.x <<= 1;
+                      if(_f.CCR.Ext)
+                        res3.x |= 1;
+                      _f.CCR.Ext=f2.CCR.Ext; _f.CCR.Carry=f2.CCR.Carry;
+                      }
+                    else {
+                      f2.CCR.Ext=f2.CCR.Carry=res3.b.l & 0x1;
+                      res3.x >>= 1;
+                      if(_f.CCR.Ext)
+                        res3.x |= 0x80000000;
+                      _f.CCR.Ext=f2.CCR.Ext; _f.CCR.Carry=f2.CCR.Carry;
+                      }
+                    res2.b.l--;
                     }
                   
-aggFlagRX4:
-                  if(res2.b.l) {
-                    if(ROTATE_DIRECTION)  // 
-                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x80000000 ? 1 : 0;
-                    else
-                      _f.CCR.Ext=_f.CCR.Carry=res1.x & 0x00000001;
-                    }
-                  else
-                    _f.CCR.Carry=_f.CCR.Ext;
                   goto aggFlagRZO4;
                   break;
                 case 0b11000:   //ROd
-                  if(ROTATE_DIRECTION) { // rotate direction
-                    res3.x = res1.x << res2.b.l;
-                    if(_f.CCR.Carry)
-                      res3.x |= 1;
-                    }
-                  else {
-                    res3.x = res1.x >> res2.b.l;
-                    if(_f.CCR.Carry)
-                      res3.x |= 0x80000000;
+                  _f.CCR.Carry=0;
+                  while(res2.b.l) {
+                    if(ROTATE_DIRECTION) { // rotate direction
+                      _f.CCR.Carry=res3.x & 0x80000000 ? 1 : 0;
+                      res3.x <<= 1;
+                      if(_f.CCR.Carry)
+                        res3.b.l |= 1;
+                      }
+                    else {
+                      _f.CCR.Carry=res3.b.l & 0x1;
+                      res3.x >>= 1;
+                      if(_f.CCR.Carry)
+                        res3.x |= 0x80000000;
+                      }
+                    res2.b.l--;
                     }
                   
-                  if(res2.b.l) {
-                    if(ROTATE_DIRECTION)  // 
-                      _f.CCR.Carry=res1.x & 0x80000000 ? 1 : 0;
-                    else
-                      _f.CCR.Carry=res1.x & 0x00000001;
-                    }
-                  else
-                    _f.CCR.Carry=0;
 aggFlagRZO4:
                   _f.CCR.Ovf = 0;
 
