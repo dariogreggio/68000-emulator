@@ -589,11 +589,12 @@ void PutValue(DWORD t,BYTE t1) {
           switch(IPCW) {
             case 255:   // scrittura cmd
               if((t1 & 0x0c) == 0x0c) {
-                IPCData <<= 1;
+//                IPCData <<= 1;
                 IPCCnt--;
                 IPCData |= t1 & 2 ? (1 << IPCCnt) : 0;
         //				IPCW <<= 1;
         //				IPCW |= t1 & 2 ? 1 : 0;
+                IPCData &= 0xf; //patch perché ho IPCdata in canna da prima...
                 if(!IPCCnt) {
                   switch(IPCData) {  // if(!IPCCnt MA LO SHIFT è IN READ...
                     case 0x01:
@@ -652,17 +653,17 @@ void PutValue(DWORD t,BYTE t1) {
           //				PRIMA 4bit cnt (b3=repeat key, b2-0 number of keys), POI 4 bit modifier (b4=overflow, b2=SHIFT, b1=CTRL, b0=ALT) e POI 8 bit tasto(i)!
                       IPCState++;
                       switch(IPCState) {
-                        case 0:
+                        case 0:     // v. sopra, qua ci ripasso forse... NO!
                           IPCData=Keyboard[2] << 4;       // num tasti, 4bit
-                          IPCCnt=4;
+                          IPCCnt=4-1;
                           break;
                         case 1:
-                          IPCData=Keyboard[1];       // modifier, 4bit
-                          IPCCnt=4;
+                          IPCData=Keyboard[1] << 4;       // modifier, 4bit
+                          IPCCnt=4-1;
                           break;
                         case 2:
                           IPCData=Keyboard[0];       // tasti, 8bit, per ora solo 1!
-                          IPCCnt=8;
+                          IPCCnt=8-1;
                           break;
                         }
                       break;
@@ -671,7 +672,7 @@ void PutValue(DWORD t,BYTE t1) {
                     default /*255*/:      // qua ci passiamo anche quando scrive (primo giro) per creare IPCW..
                       break;
                     }
-                  IPCData = (IPCData >> 1) | (IPCData & 0x1 ? 0x80 : 0);  // ROTate perché sono avanti di 1 (v.sopra)
+//                  IPCData = (IPCData >> 1) | (IPCData & 0x1 ? 0x80 : 0);  // ROTate perché sono avanti di 1 (v.sopra)
                   }
                 else {
                   IPCData = (IPCData << 1) | (IPCData & 0x80 ? 1 : 0);  // ROTate perché sono avanti di 1 (v.sopra)
@@ -679,20 +680,20 @@ void PutValue(DWORD t,BYTE t1) {
                     case 0x01:      // read status
                       IPCCnt--;
                       if(!IPCCnt) {
-                        IPCW=255; IPCCnt=4;
+                        IPCW=255; IPCCnt=4; // troppo presto! IPCData=0;
                         }
                       break;
                     case 0x06:      // read serial 1
                       IPCCnt--;
                       if(!IPCCnt) {
-                        IPCW=255; IPCCnt=4;
+                        IPCW=255; IPCCnt=4; // troppo presto! IPCData=0;
                         IPCState++;     // GESTIRE Stati poi
                         }
                       break;
                     case 0x07:      // read serial 2
                       IPCCnt--;
                       if(!IPCCnt) {
-                        IPCW=255; IPCCnt=4;
+                        IPCW=255; IPCCnt=4; // troppo presto! IPCData=0;
                         IPCState++;     // GESTIRE Stati poi
                         }
                       break;
@@ -701,10 +702,12 @@ void PutValue(DWORD t,BYTE t1) {
                         case 0:     // num tasti e modifier 4 bit
                           IPCCnt--;
                           if(!IPCCnt) {
-                            if(Keyboard[2] & 7)     // se non ci sono tasti, smetto subito
-                              IPCState++;
+                            if(Keyboard[2] & 7) {    // se non ci sono tasti, smetto subito
+//                              IPCState++;
+//                              IPCCnt=4;
+                              }
                             else {
-                              IPCW=255; IPCCnt=4;
+                        IPCW=255; IPCCnt=4; // troppo presto! IPCData=0;
                               IPCState=0;
   //                              Keyboard[0]=Keyboard[1]=Keyboard[2]=0;
                               }
@@ -713,15 +716,23 @@ void PutValue(DWORD t,BYTE t1) {
                         case 1:
                           IPCCnt--;
                           if(!IPCCnt) {
-                            IPCState++;
+//                            IPCState++;
+//                            IPCCnt=8;
                             }
                           break;
                         case 2:
                           IPCCnt--;
                           if(!IPCCnt) {
-                            IPCW=255; IPCCnt=4;
+                            Keyboard[2]--;
+                            if(Keyboard[2] & 7) {    // se non ci sono + tasti, smetto 
+                              IPCState=0;     // rimando anche modifier
+//                              IPCCnt=8;
+                              }
+                            else {
+                        IPCW=255; IPCCnt=4; // troppo presto! IPCData=0;
                             IPCState=0;
   //                              Keyboard[0]=Keyboard[1]=Keyboard[2]=0;
+                            }
                             }
                           break;
                         default:
@@ -732,7 +743,7 @@ void PutValue(DWORD t,BYTE t1) {
                     case 0x0d:      // read microdrive
                       IPCCnt--;
                       if(!IPCCnt) {
-                        IPCW=255; IPCCnt=4;
+                        IPCW=255; IPCCnt=4; // troppo presto! IPCData=0;
                         IPCState=0;
                         }
                       break;
@@ -742,7 +753,7 @@ void PutValue(DWORD t,BYTE t1) {
                       if(IPCCnt) {
                         IPCCnt--;
                         if(!IPCCnt) {
-                          IPCW=255; IPCCnt=4;
+                          IPCW=255; IPCCnt=4; IPCData=0;
                           IPCState=0;
                           }
                         }
@@ -1329,7 +1340,7 @@ int c=0;
 
 		c++;
 #ifdef QL
-		if(!(c & 0x00003fff)) {
+		if(!(c & 0x00001fff)) {
 #else
 		if(!(c & 0x0000ffff)) {
 #endif
@@ -1337,18 +1348,18 @@ int c=0;
 // yield()
 #ifndef USING_SIMULATOR
 #ifdef QL
-      UpdateScreen(VICRaster,VICRaster+8);
+      UpdateScreen(VICRaster,VICRaster+8);      //15mS 29/12/22
       VICRaster+=8;     // 
       if(VICRaster>=256) {
         VICRaster=0;
-        if(0 /*dov'è?? */)
+        if(1 /*dov'è?? */)
           VIDIRQ=1;
         }
 #else
 			UpdateScreen(1);      // 50mS 17/11/22
 #endif
 #endif
-      LED1^=1;    // 50mS~ con fabbri 17/11/22; 
+      LED1^=1;    // 50mS~ con fabbri 17/11/22; 15mS QL 29/12/22
       
       WDCnt--;
       if(!WDCnt) {
@@ -1529,11 +1540,14 @@ int c=0;
       if(!SW1) {        // test tastiera, me ne frego del repeat/rientro :)
        // continue;
         __delay_ms(100); ClrWdt();
+        DoReset=1;
         }
-      if(!SW2)        // test tastiera
-        keysFeedPtr=0;
+      if(!SW2) {        // test tastiera
+        if(keysFeedPtr==255)      // debounce...
+          keysFeedPtr=254;
+        }
 
-      LED2^=1;    // ~700nS 7/6/20, ~600 con 32bit 10/7/21 MA NON FUNZIONA/visualizza!! verificare
+      LED2^=1;    // ~1.5uS 29/12/22
 
     
 /*      if(_pc >= 0x4000) {
