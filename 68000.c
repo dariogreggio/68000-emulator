@@ -50,6 +50,7 @@ union {
   DWORD d;
   } RTC;
 BYTE IPCW=255,IPCR=0, IPCData=0,IPCCnt=4,IPCState=0;
+BYTE MDVmotor=0;
 #elif MICHELEFABBRI
 BYTE ram_seg[RAM_SIZE];
 BYTE *rom_seg;
@@ -87,7 +88,7 @@ BYTE i8042RegR[2],i8042RegW[2];
 BYTE KBDataI,KBDataO,KBControl,/*KBStatus,*/ KBRAM[32];   // https://wiki.osdev.org/%228042%22_PS/2_Controller
 #define KBStatus KBRAM[0]   // pare...
 BYTE Keyboard[3]={0,0,0};     // tasto, modifier, #tasti
-volatile BYTE TIMIRQ=0,VIDIRQ=0,KBDIRQ=0,SERIRQ=0,RTCIRQ=0;
+volatile BYTE TIMIRQ=0,VIDIRQ=0,KBDIRQ=0,SERIRQ=0,RTCIRQ=0,MDVIRQ=0;
 BYTE IRQenable=0;
 
 extern volatile BYTE keysFeedPtr;
@@ -163,7 +164,7 @@ BYTE GetValue(DWORD t) {
       case 0: //   RTC SOLO LONG!
         break;
         
-      case 2:        //   Transmit control
+      case 2:        //   Transmit control;
         break;
         
       case 3:        //   IPC Rd
@@ -184,7 +185,6 @@ BYTE GetValue(DWORD t) {
         i=0b00000000 | (IPCData & 0b10000000);      // handshake b6=0; b7 è il dato, 
 
 				//ne legge 4 o 8 (dopo aver scritto in 18003) di seguito e accumula (MSB first)
-        // b6=microdrive write protect, b1=sound, b0=keyboard, b4=seriale1, b5=seriale2
         break;
 
       case 0x21:        //   interrupt/IPC link status
@@ -192,9 +192,11 @@ BYTE GetValue(DWORD t) {
         i=VIDIRQ ? 0b00001000 : 0; 
         i |= KBDIRQ ? 0b00000010 : 0; 
 //        i |= SERIRQ ? 0b00000100 : 0; 
-//        i |= uDriveIRQ ? 0b00000001 : 0; 
+        i |= MDVIRQ ? 0b00000001 : 0; 
         
-        IPL=0;    //boh
+//        i |= EXTIRQ ? 0b00010000 : 0; 
+
+//        IPL=0;    //boh
         
         
         break;
@@ -573,7 +575,7 @@ void PutValue(DWORD t,BYTE t1) {
       case 0: //   RTC SOLO LONG!
         break;
         
-      case 2:        //   Transmit control
+      case 2:        //   Transmit control; port 2, P21 è BEEP MA FORSE a 32bit!
         break;
         
       case 3:        //   IPC Wr
@@ -771,8 +773,10 @@ void PutValue(DWORD t,BYTE t1) {
         break;
         
       case 0x20:        //   microdrive/RS232 link status
-//				IPCData <<= 1;
-//				IPCData |= t1 & 2 ? (1 << IPCCnt) : 0;
+//2; 0; 3; 1; 2 0 2 
+
+				// scrive 3 e altro, a L5478 e L2D74 e L2B82 L2C56(motor)
+        MDVmotor=t1;
         break;
 
       case 0x21:        //   interrupt/IPC link status
@@ -785,6 +789,8 @@ void PutValue(DWORD t,BYTE t1) {
           KBDIRQ=0; 
         if(t1 & 0b00000100)
           SERIRQ=0; 
+        if(t1 & 0b00000001)
+          MDVIRQ=0;
         // i 3 bit alti sono "enable"... seriale, interface, microdrive
         IRQenable=t1 & 0xe0;
         break;
@@ -1127,11 +1133,14 @@ void PutIntValue(DWORD t,DWORD t1) {
 #ifdef QL
   else if(t>=IO_BASE_ADDRESS && t<IO_BASE_ADDRESS+0x100) {       // I/O
     switch(t & 0x000ff) {
-      case 0:
+      case 0:     
         RTC.b[0]=HIBYTE(HIWORD(t1));
         RTC.b[1]=LOBYTE(HIWORD(t1));
         RTC.b[2]=HIBYTE(LOWORD(t1));
         RTC.b[3]=LOBYTE(LOWORD(t1));
+        break;
+      case 2:        //   Transmit control; 
+        //port 2, P21 è BEEP MA FORSE a 32bit!
         break;
       }
     }
@@ -1350,10 +1359,10 @@ int c=0;
 #ifdef QL
       UpdateScreen(VICRaster,VICRaster+8);      //15mS 29/12/22
       VICRaster+=8;     // 
+        if(1 /*dov'è?? */)      // VELOCIZZO! altrimenti sballa i tempi
+          VIDIRQ=1;
       if(VICRaster>=256) {
         VICRaster=0;
-        if(1 /*dov'è?? */)
-          VIDIRQ=1;
         }
 #else
 			UpdateScreen(1);      // 50mS 17/11/22
@@ -1390,8 +1399,11 @@ int c=0;
       RTCIRQ=0;
       }
 #ifdef QL
-    if(KBDIRQ || VIDIRQ /*|| TIMIRQ || SERIRQ || RTCIRQ*/) {
+    if(KBDIRQ || VIDIRQ || MDVIRQ /*|| TIMIRQ || SERIRQ || RTCIRQ*/) {
       IPL=0b010;    // 2, 
+      }
+    else {
+      IPL=0;
       }
 #endif
 #ifdef QL
@@ -1473,7 +1485,7 @@ int c=0;
       ActivateReset--;
       if(!ActivateReset) {
         
-        TIMIRQ=VIDIRQ=KBDIRQ=SERIRQ=RTCIRQ=0;
+        TIMIRQ=VIDIRQ=KBDIRQ=SERIRQ=RTCIRQ=MDVIRQ=0;
 #ifdef QL
         IPCW=255; IPCR=0; IPCData=IPCState=0; IPCCnt=4;
 #endif
@@ -2464,29 +2476,13 @@ aggFlagS:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
             _f.CCR.Carry=!!(res3.b.h);
-            if((res1.b.l & 0x80) != (res2.b.l & 0x80)) {
-              if(((res1.b.l & 0x80) && !(res3.b.l & 0x80)) || (!(res1.b.l & 0x80) && (res3.b.l & 0x80)))
-                _f.CCR.Ovf=1;
-              else
-                _f.CCR.Ovf=0;
-              }
-            else
-              _f.CCR.Ovf=0;
-//	           _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
             _f.CCR.Sign=!!(res3.b.h & 0x80);
             _f.CCR.Carry=!!(HIWORD(res3.x));
-            if((res1.b.h & 0x80) != (res2.b.h & 0x80)) {
-              if(((res1.b.h & 0x80) && !(res3.b.h & 0x80)) || (!(res1.b.h & 0x80) && (res3.b.h & 0x80)))
-                _f.CCR.Ovf=1;
-              else
-                _f.CCR.Ovf=0;
-              }
-            else
-              _f.CCR.Ovf=0;
-//						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
             break;
           case DWORD_SIZE:
 aggFlagS4:
@@ -2502,6 +2498,7 @@ aggFlagS4:
             else
               _f.CCR.Ovf=0;
 //	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
+//            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
             break;
           }
         _f.CCR.Ext=_f.CCR.Carry;
@@ -2758,32 +2755,20 @@ aggFlagA:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
             _f.CCR.Carry=!!(res3.b.h);
-//		        _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x80) != !!(((res1.w & 0x80) + (res2.w & 0x80)) & 0x100);
-//		        _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x40) != !!(((res1.b.l & 0x80) + (res2.b.l & 0x80)) & 0x80);
-//		        _f.CCR.Ovf= !!(res3.b.h & 0x1) != !!(res3.b.l & 0x80);
-	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
-            _f.CCR.Sign=!!(res3.w & 0x8000);
+            _f.CCR.Sign=!!(res3.b.h & 0x80);
             _f.CCR.Carry=!!(HIWORD(res3.x));
-//            _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x80) != !!(((res1.x & 0x8000) + (res2.x & 0x8000)) & 0x10000);
-//            _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x40) != !!(((res1.b.h & 0x80) + (res2.b.h & 0x80)) & 0x80);
-//		        _f.CCR.Ovf= !!(res3.x & 0x10000) != !!(res3.w & 0x8000);
-						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
             break;
           case DWORD_SIZE:
 aggFlagA4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
             _f.CCR.Carry=!!(((unsigned long long)res1.x + (unsigned long long)res2.x) >> 32);
-//            _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
-//                    !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000);
-            // credo sia meglio di usare QWORD longlong...
-//            _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x40000000) != 
-//                    !!(((res1.x & 0x80000000) + (res2.x & 0x80000000)) & 0x80000000);
-//		        _f.CCR.Ovf= !!(((unsigned long long)res1.x + (unsigned long long)res2.x) & 0x100000000ULL) != !!(res3.x & 0x80000000);
-	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
             break;
           }
         _f.CCR.Ext=_f.CCR.Carry;
@@ -3216,44 +3201,20 @@ aggFlagC:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
             _f.CCR.Carry=!!(res3.b.h);
-            if((res1.b.l & 0x80) != (res2.b.l & 0x80)) {
-              if(((res1.b.l & 0x80) && !(res3.b.l & 0x80)) || (!(res1.b.l & 0x80) && (res3.b.l & 0x80)))
-                _f.CCR.Ovf=1;
-              else
-                _f.CCR.Ovf=0;
-              }
-            else
-              _f.CCR.Ovf=0;
-//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
             _f.CCR.Sign=!!(res3.b.h & 0x80);
             _f.CCR.Carry=!!(HIWORD(res3.x));
-            if((res1.b.h & 0x80) != (res2.b.h & 0x80)) {
-              if(((res1.b.h & 0x80) && !(res3.b.h & 0x80)) || (!(res1.b.h & 0x80) && (res3.b.h & 0x80)))
-                _f.CCR.Ovf=1;
-              else
-                _f.CCR.Ovf=0;
-              }
-            else
-              _f.CCR.Ovf=0;
-//						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
             break;
           case DWORD_SIZE:
 aggFlagC4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
             _f.CCR.Carry=!!(((unsigned long long)res1.x - (unsigned long long)res2.x) >> 32);
-            if((res1.x & 0x80000000) != (res2.x & 0x80000000)) {
-              if(((res1.x & 0x80000000) && !(res3.x & 0x80000000)) || (!(res1.x & 0x80000000) && (res3.x & 0x80000000)))
-                _f.CCR.Ovf=1;
-              else
-                _f.CCR.Ovf=0;
-              }
-            else
-              _f.CCR.Ovf=0;
-//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
             break;
           }
 // qua X non toccato
@@ -3894,43 +3855,19 @@ aggFlagSX:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
             _f.CCR.Carry=!!(res3.b.h);
-            if((res1.b.l & 0x80) != (res2.b.l & 0x80)) {
-              if(((res1.b.l & 0x80) && !(res3.b.l & 0x80)) || (!(res1.b.l & 0x80) && (res3.b.l & 0x80)))
-                _f.CCR.Ovf=1;
-              else
-                _f.CCR.Ovf=0;
-              }
-            else
-              _f.CCR.Ovf=0;
-//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
-            _f.CCR.Sign=!!(res3.w & 0x8000);
+            _f.CCR.Sign=!!(res3.b.h & 0x80);
             _f.CCR.Carry=!!(HIWORD(res3.x));
-            if((res1.b.h & 0x80) != (res2.b.h & 0x80)) {
-              if(((res1.b.h & 0x80) && !(res3.b.h & 0x80)) || (!(res1.b.h & 0x80) && (res3.b.h & 0x80)))
-                _f.CCR.Ovf=1;
-              else
-                _f.CCR.Ovf=0;
-              }
-            else
-              _f.CCR.Ovf=0;
-//						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
             break;
           case DWORD_SIZE:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
             _f.CCR.Carry=!!(((unsigned long long)res1.x - (unsigned long long)res2.x - _f.CCR.Ext) >> 32);
-            if((res1.x & 0x80000000) != (res2.x & 0x80000000)) {
-              if(((res1.x & 0x80000000) && !(res3.x & 0x80000000)) || (!(res1.x & 0x80000000) && (res3.x & 0x80000000)))
-                _f.CCR.Ovf=1;
-              else
-                _f.CCR.Ovf=0;
-              }
-            else
-              _f.CCR.Ovf=0;
-//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
+            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
             break;
           }
         _f.CCR.Ext=_f.CCR.Carry;
@@ -5641,13 +5578,13 @@ doTrap:
                   res3.b.l=0x00;
                 break;
               case 0xc:						// Bge
-                if((_f.CCR.Sign && _f.CCR.Ovf) || (!_f.CCR.Sign && !_f.CCR.Ovf))     // greater or equal
+                if(!(_f.CCR.Sign ^ _f.CCR.Ovf))     // greater or equal
                   res3.b.l=0xff;
                 else
                   res3.b.l=0x00;
                 break;
               case 0xe:						// Bgt
-                if((_f.CCR.Sign && _f.CCR.Ovf && !_f.CCR.Zero) || (!_f.CCR.Sign && !_f.CCR.Ovf && !_f.CCR.Zero))     // greater than
+                if((_f.CCR.Sign && _f.CCR.Ovf && !_f.CCR.Zero) || !(!_f.CCR.Sign | !_f.CCR.Ovf | !_f.CCR.Zero))     // greater than
                   res3.b.l=0xff;
                 else
                   res3.b.l=0x00;
@@ -5940,7 +5877,7 @@ doDBccScc:
                 res3.b.l=0;    // credo...!
                 break;
               case 0x3:			// Ble
-                if(_f.CCR.Zero || (_f.CCR.Sign && !_f.CCR.Ovf) || (!_f.CCR.Sign && _f.CCR.Ovf))     // lower or equal
+                if(_f.CCR.Zero || (_f.CCR.Sign ^ _f.CCR.Ovf))     // lower or equal
                   res3.b.l=0xff;
                 else
                   res3.b.l=0x00;
@@ -5970,13 +5907,13 @@ doDBccScc:
                   res3.b.l=0x00;
                 break;
               case 0xd:			// Bls
-                if((_f.CCR.Sign && !_f.CCR.Ovf) || (!_f.CCR.Sign && _f.CCR.Ovf))     // less than
+                if(_f.CCR.Sign ^ _f.CCR.Ovf)     // less than
                   res3.b.l=0xff;
                 else
                   res3.b.l=0x00;
                 break;
               case 0xf:			// Ble
-                if(_f.CCR.Zero || (_f.CCR.Sign && !_f.CCR.Ovf) || (!_f.CCR.Sign && _f.CCR.Ovf))     // less or equal
+                if(_f.CCR.Zero || (_f.CCR.Sign ^ _f.CCR.Ovf))     // less or equal
                   res3.b.l=0xff;
                 else
                   res3.b.l=0x00;
@@ -6225,7 +6162,7 @@ do_bra:
             _pc+=2;
 				break;
 			case 0x63:
-        if(_f.CCR.Zero || (_f.CCR.Sign && !_f.CCR.Ovf) || (!_f.CCR.Sign && _f.CCR.Ovf))     // lower or equal
+        if(_f.CCR.Zero || (_f.CCR.Sign ^ _f.CCR.Ovf))     // lower or equal
           goto do_bra;
         else
           if(!LOBYTE(Pipe1))
@@ -6288,28 +6225,28 @@ do_bra:
             _pc+=2;
 				break;
 			case 0x6c:    // Bge
-        if((_f.CCR.Sign && _f.CCR.Ovf) || (!_f.CCR.Sign && !_f.CCR.Ovf))     // greater or equal
+        if(!(_f.CCR.Sign ^ _f.CCR.Ovf))     // greater or equal
           goto do_bra;
         else
           if(!LOBYTE(Pipe1))
             _pc+=2;
 				break;
 			case 0x6d:		// Bls Blt
-        if((_f.CCR.Sign && !_f.CCR.Ovf) || (!_f.CCR.Sign && _f.CCR.Ovf))     // less than
+        if(_f.CCR.Sign ^ _f.CCR.Ovf)     // less than
           goto do_bra;
         else
           if(!LOBYTE(Pipe1))
             _pc+=2;
 				break;
 			case 0x6e:		// Bgt
-        if((_f.CCR.Sign && _f.CCR.Ovf && !_f.CCR.Zero) || (!_f.CCR.Sign && !_f.CCR.Ovf && !_f.CCR.Zero))     // greater than
+        if((_f.CCR.Sign && _f.CCR.Ovf && !_f.CCR.Zero) || !(_f.CCR.Sign | _f.CCR.Ovf | _f.CCR.Zero))     // greater than
           goto do_bra;
         else
           if(!LOBYTE(Pipe1))
             _pc+=2;
 				break;
 			case 0x6f:    // Ble
-        if(_f.CCR.Zero || (_f.CCR.Sign && !_f.CCR.Ovf) || (!_f.CCR.Sign && _f.CCR.Ovf))     // less or equal
+        if(_f.CCR.Zero || (_f.CCR.Sign ^ _f.CCR.Ovf))     // less or equal
           goto do_bra;
         else
           if(!LOBYTE(Pipe1))
@@ -9208,31 +9145,19 @@ aggFlagAX:
                     _f.CCR.Zero=!res3.b.l;
                     _f.CCR.Sign=!!(res3.b.l & 0x80);
                     _f.CCR.Carry=!!(res3.b.h);
-//                    _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x80) != !!(((res1.w & 0x80) + (res2.w & 0x80)) & 0x100);
-//        		        _f.CCR.Ovf= !!(((res1.b.l & 0x40) + (res2.b.l & 0x40)) & 0x40) != !!(((res1.b.l & 0x80) + (res2.b.l & 0x80)) & 0x80);
-//		        _f.CCR.Ovf= !!(res3.b.h & 0x1) != !!(res3.b.l & 0x80);
-	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.l & 0x80);
-                    break;
-                  case WORD_SIZE:
-                    _f.CCR.Zero=!res3.w;
-                    _f.CCR.Sign=!!(res3.b.h & 0x80);
-                    _f.CCR.Carry=!!(HIWORD(res3.x));
-//                    _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x80) != !!(((res1.x & 0x8000) + (res2.x & 0x8000)) & 0x10000);
-//                    _f.CCR.Ovf= !!(((res1.b.h & 0x40) + (res2.b.h & 0x40)) & 0x40) != !!(((res1.b.h & 0x80) + (res2.b.h & 0x80)) & 0x80);
-//		        _f.CCR.Ovf= !!(res3.x & 0x10000) != !!(res3.w & 0x8000);
-						_f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.b.h & 0x80);
+										_f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
+										break;
+									case WORD_SIZE:
+										_f.CCR.Zero=!res3.w;
+										_f.CCR.Sign=!!(res3.b.h & 0x80);
+										_f.CCR.Carry=!!(HIWORD(res3.x));
+										_f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
                     break;
                   case DWORD_SIZE:
                     _f.CCR.Zero=!res3.x;
                     _f.CCR.Sign=!!(res3.x & 0x80000000);
                     _f.CCR.Carry=!!(((unsigned long long)res1.x + (unsigned long long)res2.x + _f.CCR.Ext) >> 32);
-//                    _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x80000000) != 
-//                            !!((((res1.x >> 16) & 0x8000) + ((res2.x >> 16) & 0x8000)) & 0x10000);
-                    // credo sia meglio di usare QWORD longlong...
-//                    _f.CCR.Ovf= !!(((res1.x & 0x40000000) + (res2.x & 0x40000000)) & 0x40000000) != 
-//                      !!(((res1.x & 0x80000000) + (res2.x & 0x80000000)) & 0x80000000);
-//		        _f.CCR.Ovf= !!(((unsigned long long)res1.x + (unsigned long long)res2.x) & 0x100000000ULL) != !!(res3.x & 0x80000000);
-	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
+				            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
                     break;
                   }
                 _f.CCR.Ext=_f.CCR.Carry;
@@ -9764,7 +9689,7 @@ aggFlagAX:
                 }
               
               if(res2.b.l && ROTATE_DIRECTION)
-                _f.CCR.Ovf=!!((res3.b.h & 0x80) && !(res1.b.h & 0x80));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
+                _f.CCR.Ovf=!!((res3.b.h & 0x80) ^ (res1.b.h & 0x80));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
               else
                 _f.CCR.Ovf=0;
                   
@@ -9904,7 +9829,7 @@ aggFlagRZ:
                     }
                   
                   if(res2.b.l && ROTATE_DIRECTION)
-                    _f.CCR.Ovf=!!((res3.b.l & 0x80) && !(res1.b.l & 0x80));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
+                    _f.CCR.Ovf=!!((res3.b.l & 0x80) ^ (res1.b.l & 0x80));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
                   else
                     _f.CCR.Ovf=0;
                   
@@ -9988,7 +9913,7 @@ aggFlagRZ1:
                     }
                   
                   if(res2.b.l && ROTATE_DIRECTION)
-                    _f.CCR.Ovf=!!((res3.b.h & 0x80) && !(res1.b.h & 0x80));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
+                    _f.CCR.Ovf=!!((res3.b.h & 0x80) ^ (res1.b.h & 0x80));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
                   else
                     _f.CCR.Ovf=0;
                   
@@ -10072,7 +9997,7 @@ aggFlagRZ2:
                     }
                   
                   if(res2.b.l && ROTATE_DIRECTION)
-                    _f.CCR.Ovf=!!((res3.x & 0x80000000) && !(res1.x & 0x80000000));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
+                    _f.CCR.Ovf=!!((res3.x & 0x80000000) ^ (res1.x & 0x80000000));   // SOLO LSL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
                   else
                     _f.CCR.Ovf=0;
                   

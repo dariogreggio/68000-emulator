@@ -89,7 +89,7 @@
 
 
 const char CopyrightString[]= {'6','8','0','0','0',' ','E','m','u','l','a','t','o','r',' ','v',
-	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '2','9','/','1','2','/','2','2', 0 };
+	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '3','1','/','1','2','/','2','2', 0 };
 
 const char Copyr1[]="(C) Dario's Automation 2022 - G.Dar\xd\xa\x0";
 
@@ -101,7 +101,7 @@ extern BYTE DoIRQ,DoNMI,DoHalt,DoReset,ColdReset;
 extern BYTE ram_seg[];
 extern BYTE *rom_seg,*rom_seg2;
 extern BYTE Keyboard[3];
-extern volatile BYTE TIMIRQ,VIDIRQ,KBDIRQ,SERIRQ,RTCIRQ;
+extern volatile BYTE TIMIRQ,VIDIRQ,KBDIRQ,SERIRQ,RTCIRQ,MDVIRQ;
 BYTE IRQenable;
 #ifdef QL
 extern DWORD VideoAddress;
@@ -223,7 +223,7 @@ int PlotDisplay(WORD pos,BYTE ch,BYTE c) {
 //#define REAL_SIZE 1
 
 WORD graphColors256[8]={BLACK,BRIGHTGREEN,BRIGHTBLUE,BRIGHTCYAN,BRIGHTRED,BRIGHTYELLOW,BRIGHTMAGENTA,WHITE};    // G F R B -> RBG
-WORD graphColors512[4]={BLACK,BRIGHTGREEN,BRIGHTRED,BRIGHTYELLOW};    // G R
+WORD graphColors512[4]={BLACK,BRIGHTGREEN,BRIGHTRED,WHITE};    // G R
 /* INK SuperBasic colors:
 0 black   black
 1 blue    black (should be avoided)
@@ -240,7 +240,7 @@ int UpdateScreen(SWORD rowIni, SWORD rowFin) {
 	register BYTE *p,*p1;
   BYTE chl,chh;
 
-  // ci mette circa 1mS ogni passata... dovrebbe essere la metà... (viene chiamata circa 25-30 volte al secondo e ora siamo a 40mS invece di 20, 8/11/19)
+  // ci mette circa 1.5mS ogni passata... 29/12/22  @256*256
   
 	// per SPI DMA https://www.microchip.com/forums/m1110777.aspx#1110777
 
@@ -317,12 +317,12 @@ int UpdateScreen(SWORD rowIni, SWORD rowFin) {
 //High byte (A0=0)              Low Byte (A0=1)           Mode
 //D7 D6 D5 D4 D3 D2 D1 D0       D7 D6 D5 D4 D3 D2 D1 D0
 //G7 G6 G5 G4 G3 G2 G1 G0       R7 R6 R5 R4 R3 R2 R1 R0   512-pixel
-        writedata16x2(graphColors512[chl & 0b10000000 ? 1 : 0 | chh & 0b10000000 ? 2 : 0],
-                graphColors512[chl & 0b00001000 ? 1 : 0 | chh & 0b00001000 ? 2 : 0]);
+        writedata16x2(graphColors512[(chl & 0b10000000 ? 1 : 0) | (chh & 0b10000000 ? 2 : 0)],
+                graphColors512[(chl & 0b00001000 ? 1 : 0) | (chh & 0b00001000 ? 2 : 0)]);
         // ogni 2 byte 8 pixel
         xtra++;
         if(xtra>=2) {   // 128->160 USARE (px & 2) ??
-          writedata16(graphColors512[chl & 0b00000010 ? 1 : 0 | chh & 0b00000010 ? 2 : 0]);
+          writedata16(graphColors512[(chl & 0b00000010 ? 1 : 0) | (chh & 0b00000010 ? 2 : 0)]);
           xtra=0;
           }
         }
@@ -3853,6 +3853,7 @@ const unsigned short int QL_JS_BIN[]= {    // QL_js.bin
   /*0150:*/ 0x0200, 0x5080, 0x562F, 0x0400, 0x5F2C, 0x754E, 0x4B2A, 0xC73A, 
   /*0160:*/ 0xFCBB, 0x0200, 0x0080, 0xF666, 0xF260,
 #ifdef USING_SIMULATOR
+            0x3c24, 0x00A0,0x0000, 0x3C22, 0x0020,0x0000, 0x8292,
             0x0f70, 0xf072, 0x84d3, 0x8493, 0x89d5,
             0x43c3, 0x41c6, 0x43c2, 0x4bc3, 0x89c3,
             0x3c20, 0x0000, 0xc000, 0xbd74, 0x0094,
@@ -4227,7 +4228,7 @@ const unsigned short int QL_JS_BIN[]= {    // QL_js.bin
   /*1720:*/ 0xE8D2, 0x2600,  0x2E00, 0x2000, 0x3500, 0x7C02, 0xFFF8, 0x754E, 
   /*1730:*/ 0x4924, 0x0072, 0x2A12, 0x1400, 0x0070, 0x2810, 0x1D00, 0x08E5, 
   /*1740:*/ 0xEE49, 0xEE00, 0x8019, 0x0110, 0x14B2, 0x1A67, 0x344A, 0x0710, 
-  /*1750:*/ 0x1466, 0x7C15, 0x0100, 0x2300, 0xBA4E, 0xA612, 0x2A4A, 0x2300, 
+  /*1750:*/ 0x1466, 0x7C15, 0x0100, 0x2300, 0xBA4E, 0xA612,  0x2A4A, 0x2300, 
   /*1760:*/ 0xFA6E, 0x006B, 0xE000, 0xE849, 0x5800, 0x4074, 0x4221, 0x2400, 
   /*1770:*/ 0xFF76, 0x0061, 0xD800, 0x1428, 0x0420, 0x88EF, 0x48EE, 0x4021, 
   /*1780:*/ 0x2400, 0x280C, 0x0400, 0x1C00, 0x0067, 0xB600, 0x8CEC, 0x007A, 
@@ -4538,7 +4539,7 @@ const unsigned short int QL_JS_BIN[]= {    // QL_js.bin
   /*2A90:*/ 0xD924, 0xA661, 0xED51, 0x2300, 0x0060, 0xEA00, 0xED43, 0x1600, 
   /*2AA0:*/ 0x114A, 0x0E67, 0xC891, 0x0A74, 0xBA4E, 0x0A0F, 0xF070, 0xBA4E, 
   /*2AB0:*/ 0xB80E, 0x8661, 0xED50, 0x2300, 0x0060, 0x2801, 0xE748, 0xF8FE, 
-  /*2AC0:*/ 0xF947, 0x0100, 0x2080, 0x0070, 0x2E10, 0xEE00, 0x0067, 0xBA00, 
+  /*2AC0:*/ 0xF947, 0x0100,  0x2080, 0x0070, 0x2E10, 0xEE00, 0x0067, 0xBA00, 
   /*2AD0:*/ 0xFC9E, 0x0E00, 0x4F22, 0xEE4B, 0xF000, 0xF551, 0x0700, 0x3510, 
   /*2AE0:*/ 0xFF00, 0x003F, 0x752A, 0x1000, 0x0D2F, 0x2E14, 0xEF00, 0x026C, 
   /*2AF0:*/ 0x0252, 0xB94E, 0x0000, 0x3A52, 0xA260, 0x9C60, 0x0B70, 0xED45, 
@@ -4551,8 +4552,8 @@ const unsigned short int QL_JS_BIN[]= {    // QL_js.bin
   /*2B60:*/ 0x5C52, 0x1E60, 0x0860, 0xB94E, 0x0000, 0x6252, 0x1060, 0x0370, 
   /*2B70:*/ 0x6D42, 0x2802, 0x6F22, 0x0400, 0xE951, 0x2400, 0x3A60, 0x0770, 
   /*2B80:*/ 0x3660, 0x4F58, 0xFCDE, 0x1400,  0x2E1E, 0x3500,  0x0700, 0x0100, 
-  /*2B90:*/ 0x0702, 0xDF00, 0x4717, 0x0100, 0x6E17, 0x3500, 0x0100, 0xDF4C, 
-  /*2BA0:*/ 0x7F1F, 0x0060, 0x12D8, 0x024A, 0xD86B, 0x2D3F, 0x2800, 0xB94E, 
+  /*2B90:*/ 0x0702, 0xDF00,  0x4717, 0x0100,  0x6E17, 0x3500, 0x0100,  0xDF4C, 
+  /*2BA0:*/ 0x7F1F,  0x0060,  0x12D8, 0x024A, 0xD86B, 0x2D3F, 0x2800, 0xB94E, 
   /*2BB0:*/ 0x0000, 0xB051, 0x4F54, 0x0B70, 0xF072, 0x5F28, 0x14C2, 0x0082, 
   /*2BC0:*/ 0x8118, 0x0574, 0x024A, 0x4C6B, 0x0252, 0x020C, 0x0800, 0x446D, 
   /*2BD0:*/ 0x0074, 0x0070, 0x572A, 0xED4B, 0x2802, 0x5D4A, 0x3666, 0x0052, 
@@ -4563,7 +4564,7 @@ const unsigned short int QL_JS_BIN[]= {    // QL_js.bin
   /*2C20:*/ 0x4152, 0x1666, 0x024A, 0x006B, 0x5CFF, 0x3C3F, 0x0080, 0xB94E, 
   /*2C30:*/ 0x0000, 0xB051, 0x4F54, 0xFE72, 0x0E60, 0xB94E, 0x0000, 0x6252, 
   /*2C40:*/ 0x0460, 0x0072, 0x0260, 0xFF72, 0x413B, 0x2802, 0x0060, 0x36FF, 
-  /*2C50:*/ 0x0274, 0x0772, 0x0460, 0x0374, 0x4153, 0x8216, 0x3970, 0xB8E0, 
+  /*2C50:*/ 0x0274, 0x0772, 0x0460,  0x0374, 0x4153, 0x8216, 0x3970, 0xB8E0, 
   /*2C60:*/ 0x8208, 0x0100,  0x8216, 0x3970, 0xB8E0,  0x0274,  0xC951, 0xECFF, 
   /*2C70:*/ 0x754E,  0xE740, 0x7C00, 0x0007, 0xBA4E, 0xF402, 0x1B10, 0x4861, 
   /*2C80:*/ 0x1B1E, 0x1B28, 0x0753, 0x1C6D, 0x1B10, 0x0408, 0x0000, 0x1066, 
@@ -7231,8 +7232,109 @@ int emulateKBD(BYTE ch) {
 2 	|     Z     .     C     B     pound 	M 	~
 1 	Enter 	Left/J1-L 	Up/J1-U	Esc 	Right/J1-R 	\  Space/J1-F 	Down/J1-D     // Enter=@0xb493=45 dopo x
 0 	F4/J2-U 	F1/J2-L 	5 	F2/J2-D 	F3/J2-R 	F5/J2-F 	4 	7
- * 
+  
   a + 63 ci sono le maiuscole e gli shifted... ossia X=75, !=90
+  
+Sinclair QL keycode table       Till Harbaum            V1.0 - 08/04/2015
+-------------------------------------------------------------------------
+
+This table shows how the 64 keys of the Sinclair QL are wired and how their
+codes on IPC cmd 8 and 9 are derived.
+
+http://www.sinclairql.net/srv/keyboard_format.png
+
+Example
+
+E.g. pressing the Q key on a UK keyboard connects Pin 2 of J11 with Pin 4 of
+J12. This is the key in row 1 and column 3. On IPC command 8 the 8049 will
+respond with $0b for this key (8*1+3 = 11 = $0b). A Command 9 request for 
+row 6 will return 8 (2^3 = 8).
+
++------------------- row (request to cmd 9 is 7-row)
+|  +---------------- J11 (pin connected to J12 when pressed)
+|  |  +------------- column (reply to cmd 9 is 2^column)
+|  |  |  +---------- J12 (pin connected to J11 when pressed)
+|  |  |  |  +------- keycode returned by IPC Command 8 (= 8*row+column)
+|  |  |  |  |
+|  |  |  |  |     +- key label on UK keyboard
+|  |  |  |  |     |
+
+   9     1        CTRL, reported in bit 1 of cmd 8 modifier bits
+   9     2        SHIFT, reported in bit 2 of cmd 8 modifier bits
+   9    11        ALT, reported in bit 0 of cmd 8 modifier bits
+
+0  7  0  9        <unused> SHIFT is mapped here in cmd 9 reply
+0  7  1  3        <unused> CTRL is mapped here in cmd 9 reply
+0  7  2  7        <unused> ALT is mapped here in cmd 9 reply
+0  7  3  4 03     x
+0  7  4  5 04     v
+0  7  5 10 05     /
+0  7  6  6 06     n
+0  7  7  8 07     ,
+
+1  2  0  9 08     8
+1  2  1  3 09     2
+1  2  2  7 0A     6
+1  2  3  4 0B     q
+1  2  4  5 0C     e
+1  2  5 10 0D     0
+1  2  6  6 0E     t
+1  2  7  8 0F     u
+
+2  3  0  9 10     9
+2  3  1  3 11     w
+2  3  2  7 12     i
+2  3  3  4 13     TAB
+2  3  4  5 14     r
+2  3  5 10 15     -
+2  3  6  6 16     y
+2  3  7  8 17     o
+
+3  4  0  9 18     l
+3  4  1  3 19     3
+3  4  2  7 1A     h
+3  4  3  4 1B     1
+3  4  4  5 1C     a
+3  4  5 10 1D     p
+3  4  6  6 1E     d
+3  4  7  8 1F     j
+
+4  5  0  9 20     [
+4  5  1  3 21     CAPS
+4  5  2  7 22     k
+4  5  3  4 23     s
+4  5  4  5 24     f
+4  5  5 10 25     =
+4  5  6  6 26     g
+4  5  7  8 27     ;
+
+5  6  0  9 28     ]
+5  6  1  3 29     z
+5  6  2  7 2A     .
+5  6  3  4 2B     c
+5  6  4  5 2C     b
+5  6  5 10 2D     Pound
+5  6  6  6 2E     m
+5  6  7  8 2F     '
+
+6  8  0  9 30     RET
+6  8  1  3 31     Left
+6  8  2  7 32     Up
+6  8  3  4 33     ESC
+6  8  4  5 34     Right
+6  8  5 10 35     \
+6  8  6  6 36     SPACE
+6  8  7  8 37     Down
+
+7  1  0  9 38     F4
+7  1  1  3 39     F1
+7  1  2  7 3A     5
+7  1  3  4 3B     F2
+7  1  4  5 3C     F3
+7  1  5 10 3D     F5
+7  1  6  6 3E     4
+7  1  7  8 3F     7
+ 
   */
   
 	switch(ch) {
@@ -7477,10 +7579,10 @@ int emulateKBD(BYTE ch) {
 			break;
       
 		case 144:     // F1
-      Keyboard[0] = 232;    //FARE! sembra 232 dal codice a 4B02
+      Keyboard[0] = 0x39;    //ossia sembra 232 dal codice a 4B02
 			break;
 		case 145:     // F2
-      Keyboard[0] = 236;		//FARE! sembra 236 a 4B06
+      Keyboard[0] = 0x3b;		//ossia sembra 236 a 4B06
 			break;
       
     default:
@@ -7505,6 +7607,7 @@ keycommand:
 
   Keyboard[2] = 1;
 
+// RIMETTERE  
   if(IRQenable & 0b01000000)        //1=attivi
     KBDIRQ=1;
   return;
@@ -7512,11 +7615,19 @@ keycommand:
   
 no_irq:
   Keyboard[2] = 0x0;
-    ;
+  if(IRQenable & 0b01000000)        //1=attivi
+    KBDIRQ=1;
+
   }
 
-const char keysFeed[]="\x91\x91";			// 0x91=145=F2 per andare in TV mode al boot
-volatile BYTE keysFeedPtr=sizeof(keysFeed)-1;
+BYTE whichKeysFeed=0;
+char keysFeed[32]={0};
+volatile BYTE keysFeedPtr=255;
+const char *keysFeed1="\x90";			// 0x91=145=F2 per andare in TV mode al boot; 0x90=F1=monitor
+const char *keysFeed2="PRINT \"Ciao\"\n";
+const char *keysFeed3="LIST\n";
+const char *keysFeed4="MODE 8\n";
+const char *keysFeed5="A$=\"dario\"\n";
 
 void __ISR(_TIMER_3_VECTOR,ipl4AUTO) TMR_ISR(void) {
 // https://www.microchip.com/forums/m842396.aspx per IRQ priority ecc
@@ -7535,6 +7646,9 @@ void __ISR(_TIMER_3_VECTOR,ipl4AUTO) TMR_ISR(void) {
     }
 
 
+    if(IRQenable & 0b00100000)        //1=attivi
+      MDVIRQ=1;     // proviamo...
+  
   dividerTim++;
   if(dividerTim>=1600) {   // 1Hz RTC
     // vedere registro 0A, che ha i divisori...
@@ -7543,6 +7657,7 @@ void __ISR(_TIMER_3_VECTOR,ipl4AUTO) TMR_ISR(void) {
 #ifdef QL
     RTC.d++;
 //      RTCIRQ=1;
+    
 #elif MICHELEFABBRI
 //      RTCIRQ=1;
 #else
@@ -7590,6 +7705,33 @@ void __ISR(_TIMER_3_VECTOR,ipl4AUTO) TMR_ISR(void) {
 		} 
   
 
+  if(keysFeedPtr==255)      // EOL
+    goto fine;
+  if(keysFeedPtr==254) {    // NEW string
+    keysFeedPtr=0;
+    keysFeedPhase=0;
+		switch(whichKeysFeed) {
+			case 0:
+				strcpy(keysFeed,keysFeed1);
+				break;
+			case 1:
+				strcpy(keysFeed,keysFeed2);
+				break;
+			case 2:
+				strcpy(keysFeed,keysFeed3);
+				break;
+			case 3:
+				strcpy(keysFeed,keysFeed4);
+				break;
+			case 4:
+				strcpy(keysFeed,keysFeed5);
+				break;
+			}
+		whichKeysFeed++;
+		if(whichKeysFeed>4)
+			whichKeysFeed=0;
+//    goto fine;
+		}
   
   if(keysFeed[keysFeedPtr]) {
     dividerEmulKbd++;
@@ -7607,7 +7749,8 @@ wait_kbd: ;
         }
       }
     }
-    
+  
+fine:
   IFS0CLR = _IFS0_T3IF_MASK;
   }
 
