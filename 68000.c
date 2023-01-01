@@ -590,6 +590,8 @@ void PutValue(DWORD t,BYTE t1) {
         else {
           switch(IPCW) {
             case 255:   // scrittura cmd
+              if(IPCCnt==4)     // pulisco ora, non avendo potuto pulire a fine evento prec. (v. sotto)
+                IPCData=0;
               if((t1 & 0x0c) == 0x0c) {
 //                IPCData <<= 1;
                 IPCCnt--;
@@ -624,11 +626,12 @@ void PutValue(DWORD t,BYTE t1) {
                     case 0x0d:      // write baud rate
                       IPCW=0x0d;
                       IPCCnt=4;       // ma QUA DEVO RICEVERE ALTRI 4 BIT!! fare!
+                      IPCData=0;
                       IPCState=0;
                       break;
                     default:
-                      IPCW=0;
-                      IPCCnt=8;
+                      IPCW=255; IPCData=0;    // in caso di robe strane, mi rimetto a leggere!
+                      IPCCnt=4;
                       IPCState=0;
                       break;
                     }
@@ -642,7 +645,7 @@ void PutValue(DWORD t,BYTE t1) {
                 IPCCnt--;
                 IPCData |= t1 & 2 ? (1 << IPCCnt) : 0;
                 if(!IPCCnt) {
-                  // usare il valore... gestire
+                  // usare il valore... gestire                  IPCData &= 0xf; //patch perché ho IPCdata in canna da prima...
                   IPCW=255; IPCCnt=4;
                   }
                 }
@@ -731,7 +734,7 @@ void PutValue(DWORD t,BYTE t1) {
 //                              IPCCnt=8;
                               }
                             else {
-                        IPCW=255; IPCCnt=4; // troppo presto! IPCData=0;
+                        IPCW=255; IPCCnt=4; // troppo presto.. IPCData=0;
                             IPCState=0;
   //                              Keyboard[0]=Keyboard[1]=Keyboard[2]=0;
                             }
@@ -742,7 +745,7 @@ void PutValue(DWORD t,BYTE t1) {
                           break;
                         }
                       break;
-                    case 0x0d:      // read microdrive
+                    case 0x0d:      // set baud rate
                       IPCCnt--;
                       if(!IPCCnt) {
                         IPCW=255; IPCCnt=4; // troppo presto! IPCData=0;
@@ -1206,6 +1209,22 @@ void PutIntValue(DWORD t,DWORD t1) {
         }\
       }\
     }
+#define ADD64() {\
+  _f.CCR.Carry=!!HIWORD((uint32_t)res1.w + (uint32_t)res2.w);\
+  _f.CCR.Carry=!!HIWORD((res1.x>>16) + (res2.x>>16) + _f.CCR.Carry);\
+  }
+#define ADD64X() {\
+  _f.CCR.Carry=!!HIWORD((uint32_t)res1.w + (uint32_t)res2.w + _f.CCR.Ext);\
+  _f.CCR.Carry=!!HIWORD((res1.x>>16) + (res2.x>>16) + _f.CCR.Carry);\
+  }
+#define SUB64() {\
+  _f.CCR.Carry=!!HIWORD((uint32_t)res1.w - (uint32_t)res2.w);\
+  _f.CCR.Carry=!!HIWORD((res1.x>>16) - (res2.x>>16) - _f.CCR.Carry);\
+  }
+#define SUB64X() {\
+  _f.CCR.Carry=!!HIWORD((uint32_t)res1.w - (uint32_t)res2.w - _f.CCR.Ext);\
+  _f.CCR.Carry=!!HIWORD((res1.x>>16) - (res2.x>>16) - _f.CCR.Carry);\
+  }
 
 
 
@@ -2475,30 +2494,27 @@ aggFlagS:
           case BYTE_SIZE:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
-            _f.CCR.Carry=!!(res3.b.h);
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
+    				_f.CCR.Carry= !!((res2.b.l & 0x80) & (~res1.b.l & 0x80)) | !!((res3.b.l & 0x80) &
+        			(~res1.b.l & 0x80)) | !!((res2.b.l & 0x80) & (res3.b.l & 0x80));
+    				_f.CCR.Ovf= !!((~res2.b.l & 0x80) & (res1.b.l & 0x80) & (~res3.b.l & 0x80)) |
+        			!!((res2.b.l & 0x80) & (~res1.b.l & 0x80) & (res3.b.l & 0x80));
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
             _f.CCR.Sign=!!(res3.b.h & 0x80);
-            _f.CCR.Carry=!!(HIWORD(res3.x));
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
+    				_f.CCR.Carry= !!((res2.b.h & 0x80) & (~res1.b.h & 0x80)) | !!((res3.b.h & 0x80) &
+        			(~res1.b.h & 0x80)) | !!((res2.b.h & 0x80) & (res3.b.h & 0x80));
+    				_f.CCR.Ovf= !!((~res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
+        			!!((res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80));
             break;
           case DWORD_SIZE:
 aggFlagS4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
-            _f.CCR.Carry=!!(((unsigned long long)res1.x - (unsigned long long)res2.x) >> 32);
-            if((res1.x & 0x80000000) != (res2.x & 0x80000000)) {
-              if(((res1.x & 0x80000000) && !(res3.x & 0x80000000)) || (!(res1.x & 0x80000000) && (res3.x & 0x80000000)))
-                _f.CCR.Ovf=1;
-              else
-                _f.CCR.Ovf=0;
-              }
-            else
-              _f.CCR.Ovf=0;
-//	          _f.CCR.Ovf=!!_f.CCR.Carry != !!(res3.x & 0x80000000);
-//            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
+    				_f.CCR.Carry= !!((res2.x & 0x80000000) & (~res1.x & 0x80000000)) | !!((res3.x & 0x80000000) &
+        			(~res1.b.h & 0x80000000)) | !!((res2.b.h & 0x80000000) & (res3.b.h & 0x80000000));
+    				_f.CCR.Ovf= !!((~res2.b.h & 0x80000000) & (res1.b.h & 0x80000000) & (~res3.b.h & 0x80000000)) |
+        			!!((res2.b.h & 0x80000000) & (~res1.b.h & 0x80000000) & (res3.b.h & 0x80000000));
             break;
           }
         _f.CCR.Ext=_f.CCR.Carry;
@@ -2754,21 +2770,27 @@ aggFlagA:
           case BYTE_SIZE:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
-            _f.CCR.Carry=!!(res3.b.h);
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
+    				_f.CCR.Carry= !!((res2.b.l & 0x80) & (res1.b.l & 0x80)) | !!((~res3.b.l & 0x80) &
+        			(res1.b.l & 0x80)) | !!((res2.b.l & 0x80) & (~res3.b.l & 0x80));
+    				_f.CCR.Ovf= !!((res2.b.l & 0x80) & (res1.b.l & 0x80) & (~res3.b.l & 0x80)) |
+        			!!((~res2.b.l & 0x80) & (~res1.b.l & 0x80) & (res3.b.l & 0x80));
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
             _f.CCR.Sign=!!(res3.b.h & 0x80);
-            _f.CCR.Carry=!!(HIWORD(res3.x));
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
+    				_f.CCR.Carry= !!((res2.b.h & 0x80) & (res1.b.h & 0x80)) | !!((~res3.b.h & 0x80) &
+        			(res1.b.h & 0x80)) | !!((res2.b.h & 0x80) & (~res3.b.h & 0x80));
+    				_f.CCR.Ovf= !!((res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
+        			!!((~res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80));
             break;
           case DWORD_SIZE:
 aggFlagA4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
-            _f.CCR.Carry=!!(((unsigned long long)res1.x + (unsigned long long)res2.x) >> 32);
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
+    				_f.CCR.Carry= !!((res2.x & 0x80000000) & (res1.x & 0x80000000)) | !!((~res3.x & 0x80000000) &
+        			(res1.x & 0x80000000)) | !!((res2.x & 0x80000000) & (~res3.x & 0x80000000));
+    				_f.CCR.Ovf= !!((res2.x & 0x80000000) & (res1.x & 0x80000000) & (~res3.x & 0x80000000)) |
+        			!!((~res2.x & 0x80000000) & (~res1.x & 0x80000000) & (res3.x & 0x80000000));
             break;
           }
         _f.CCR.Ext=_f.CCR.Carry;
@@ -3200,21 +3222,27 @@ aggFlagC:
           case BYTE_SIZE:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
-            _f.CCR.Carry=!!(res3.b.h);
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
+    				_f.CCR.Carry= !!((res2.b.l & 0x80) & (~res1.b.l & 0x80)) | !!((res3.b.l & 0x80) &
+        			(~res1.b.l & 0x80)) | !!((res2.b.l & 0x80) & (res3.b.l & 0x80));
+    				_f.CCR.Ovf= !!((~res2.b.l & 0x80) & (res1.b.l & 0x80) & (~res3.b.l & 0x80)) |
+        			!!((res2.b.l & 0x80) & (~res1.b.l & 0x80) & (res3.b.l & 0x80));
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
             _f.CCR.Sign=!!(res3.b.h & 0x80);
-            _f.CCR.Carry=!!(HIWORD(res3.x));
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
+    				_f.CCR.Carry= !!((res2.b.h & 0x80) & (~res1.b.h & 0x80)) | !!((res3.b.h & 0x80) &
+        			(~res1.b.h & 0x80)) | !!((res2.b.h & 0x80) & (res3.b.h & 0x80));
+    				_f.CCR.Ovf= !!((~res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
+        			!!((res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80));
             break;
           case DWORD_SIZE:
 aggFlagC4:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
-            _f.CCR.Carry=!!(((unsigned long long)res1.x - (unsigned long long)res2.x) >> 32);
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
+    				_f.CCR.Carry= !!((res2.x & 0x80000000) & (~res1.x & 0x80000000)) | !!((res3.x & 0x80000000) &
+        			(~res1.b.h & 0x80000000)) | !!((res2.b.h & 0x80000000) & (res3.b.h & 0x80000000));
+    				_f.CCR.Ovf= !!((~res2.b.h & 0x80000000) & (res1.b.h & 0x80000000) & (~res3.b.h & 0x80000000)) |
+        			!!((res2.b.h & 0x80000000) & (~res1.b.h & 0x80000000) & (res3.b.h & 0x80000000));
             break;
           }
 // qua X non toccato
@@ -3854,20 +3882,26 @@ aggFlagSX:
           case BYTE_SIZE:
             _f.CCR.Zero=!res3.b.l;
             _f.CCR.Sign=!!(res3.b.l & 0x80);
-            _f.CCR.Carry=!!(res3.b.h);
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
+    				_f.CCR.Carry= !!((res2.b.l & 0x80) & (~res1.b.l & 0x80)) | !!((res3.b.l & 0x80) &
+        			(~res1.b.l & 0x80)) | !!((res2.b.l & 0x80) & (res3.b.l & 0x80));
+    				_f.CCR.Ovf= !!((~res2.b.l & 0x80) & (res1.b.l & 0x80) & (~res3.b.l & 0x80)) |
+        			!!((res2.b.l & 0x80) & (~res1.b.l & 0x80) & (res3.b.l & 0x80));
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
             _f.CCR.Sign=!!(res3.b.h & 0x80);
-            _f.CCR.Carry=!!(HIWORD(res3.x));
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
+    				_f.CCR.Carry= !!((res2.b.h & 0x80) & (~res1.b.h & 0x80)) | !!((res3.b.h & 0x80) &
+        			(~res1.b.h & 0x80)) | !!((res2.b.h & 0x80) & (res3.b.h & 0x80));
+    				_f.CCR.Ovf= !!((~res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
+        			!!((res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80));
             break;
           case DWORD_SIZE:
             _f.CCR.Zero=!res3.x;
             _f.CCR.Sign=!!(res3.x & 0x80000000);
-            _f.CCR.Carry=!!(((unsigned long long)res1.x - (unsigned long long)res2.x - _f.CCR.Ext) >> 32);
-            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
+    				_f.CCR.Carry= !!((res2.x & 0x80000000) & (~res1.x & 0x80000000)) | !!((res3.x & 0x80000000) &
+        			(~res1.b.h & 0x80000000)) | !!((res2.b.h & 0x80000000) & (res3.b.h & 0x80000000));
+    				_f.CCR.Ovf= !!((~res2.b.h & 0x80000000) & (res1.b.h & 0x80000000) & (~res3.b.h & 0x80000000)) |
+        			!!((res2.b.h & 0x80000000) & (~res1.b.h & 0x80000000) & (res3.b.h & 0x80000000));
             break;
           }
         _f.CCR.Ext=_f.CCR.Carry;
@@ -5584,7 +5618,7 @@ doTrap:
                   res3.b.l=0x00;
                 break;
               case 0xe:						// Bgt
-                if((_f.CCR.Sign && _f.CCR.Ovf && !_f.CCR.Zero) || !(!_f.CCR.Sign | !_f.CCR.Ovf | !_f.CCR.Zero))     // greater than
+                if((_f.CCR.Sign & _f.CCR.Ovf & !_f.CCR.Zero) || !(_f.CCR.Sign | _f.CCR.Ovf | _f.CCR.Zero))     // greater than
                   res3.b.l=0xff;
                 else
                   res3.b.l=0x00;
@@ -6239,7 +6273,7 @@ do_bra:
             _pc+=2;
 				break;
 			case 0x6e:		// Bgt
-        if((_f.CCR.Sign && _f.CCR.Ovf && !_f.CCR.Zero) || !(_f.CCR.Sign | _f.CCR.Ovf | _f.CCR.Zero))     // greater than
+        if((_f.CCR.Sign & _f.CCR.Ovf & !_f.CCR.Zero) || !(_f.CCR.Sign | _f.CCR.Ovf | _f.CCR.Zero))     // greater than
           goto do_bra;
         else
           if(!LOBYTE(Pipe1))
@@ -7887,15 +7921,15 @@ do_bra:
             case ADDRADD:   // (An)
               switch(OPERAND_SIZE) {
                 case BYTE_SIZE:
-                  res3.b.l = GetValue(WORKING_REG_A.x) ^ WORKING_REG_D.b.b0;
+                  res3.b.l = GetValue(WORKING_REG_A.x) ^ DEST_REG_D.b.b0;
                   PutValue(WORKING_REG_A.x,res3.b.l);
                   break;
                 case WORD_SIZE:
-                  res3.w = GetShortValue(WORKING_REG_A.x) ^ WORKING_REG_D.w.l;
+                  res3.w = GetShortValue(WORKING_REG_A.x) ^ DEST_REG_D.w.l;
                   PutShortValue(WORKING_REG_A.x,res3.w);
                   break;
                 case DWORD_SIZE:
-                  res3.x = GetIntValue(WORKING_REG_A.x) ^ WORKING_REG_D.x;
+                  res3.x = GetIntValue(WORKING_REG_A.x) ^ DEST_REG_D.x;
                   PutIntValue(WORKING_REG_A.x,res3.x);
                   break;
                 }
@@ -7903,17 +7937,17 @@ do_bra:
             case ADDRPINCADD:   // (An)+
               switch(OPERAND_SIZE) {
                 case BYTE_SIZE:
-                  res3.b.l = GetValue(WORKING_REG_A.x) ^ WORKING_REG_D.b.b0;
+                  res3.b.l = GetValue(WORKING_REG_A.x) ^ DEST_REG_D.b.b0;
                   PutValue(WORKING_REG_A.x,res3.b.l);
 									WORKING_REG_A.x += (LOBYTE(Pipe1) & 7) == 7 ? 2 : 1;
                   break;
                 case WORD_SIZE:
-                  res3.w = GetShortValue(WORKING_REG_A.x) ^ WORKING_REG_D.w.l;
+                  res3.w = GetShortValue(WORKING_REG_A.x) ^ DEST_REG_D.w.l;
                   PutShortValue(WORKING_REG_A.x,res3.w);
                   WORKING_REG_A.x+=2;
                   break;
                 case DWORD_SIZE:
-                  res3.x = GetIntValue(WORKING_REG_A.x) ^ WORKING_REG_D.x;
+                  res3.x = GetIntValue(WORKING_REG_A.x) ^ DEST_REG_D.x;
                   PutIntValue(WORKING_REG_A.x,res3.x);
                   WORKING_REG_A.x+=4;
                   break;
@@ -7923,17 +7957,17 @@ do_bra:
               switch(OPERAND_SIZE) {
                 case BYTE_SIZE:
 									WORKING_REG_A.x -= (LOBYTE(Pipe1) & 7) == 7 ? 2 : 1;
-                  res3.b.l = GetValue(WORKING_REG_A.x) ^ WORKING_REG_D.b.b0;
+                  res3.b.l = GetValue(WORKING_REG_A.x) ^ DEST_REG_D.b.b0;
                   PutValue(WORKING_REG_A.x,res3.b.l);
                   break;
                 case WORD_SIZE:
                   WORKING_REG_A.x-=2;
-                  res3.w = GetShortValue(WORKING_REG_A.x) ^ WORKING_REG_D.w.l;
+                  res3.w = GetShortValue(WORKING_REG_A.x) ^ DEST_REG_D.w.l;
                   PutShortValue(WORKING_REG_A.x,res3.w);
                   break;
                 case DWORD_SIZE:
                   WORKING_REG_A.x-=4;
-                  res3.x = GetIntValue(WORKING_REG_A.x) ^ WORKING_REG_D.x;
+                  res3.x = GetIntValue(WORKING_REG_A.x) ^ DEST_REG_D.x;
                   PutIntValue(WORKING_REG_A.x,res3.x);
                   break;
                 }
@@ -7941,15 +7975,15 @@ do_bra:
             case ADDRDISPADD:   // (D16,An)
               switch(OPERAND_SIZE) {
                 case BYTE_SIZE:
-                  res3.b.l = GetValue(WORKING_REG_A.x + (int16_t)Pipe2.w) ^ WORKING_REG_D.b.b0;
+                  res3.b.l = GetValue(WORKING_REG_A.x + (int16_t)Pipe2.w) ^ DEST_REG_D.b.b0;
                   PutValue(WORKING_REG_A.x + (int16_t)Pipe2.w,res3.b.l);
                   break;
                 case WORD_SIZE:
-                  res3.w = GetShortValue(WORKING_REG_A.x + (int16_t)Pipe2.w) ^ WORKING_REG_D.w.l;
+                  res3.w = GetShortValue(WORKING_REG_A.x + (int16_t)Pipe2.w) ^ DEST_REG_D.w.l;
                   PutShortValue(WORKING_REG_A.x + (int16_t)Pipe2.w,res3.w);
                   break;
                 case DWORD_SIZE:
-                  res3.x = GetIntValue(WORKING_REG_A.x + (int16_t)Pipe2.w) ^ WORKING_REG_D.x;
+                  res3.x = GetIntValue(WORKING_REG_A.x + (int16_t)Pipe2.w) ^ DEST_REG_D.x;
                   PutIntValue(WORKING_REG_A.x + (int16_t)Pipe2.w,res3.x);
                   break;
                 }
@@ -7959,31 +7993,31 @@ do_bra:
               switch(OPERAND_SIZE) {
                 case BYTE_SIZE:
                   if(!DISPLACEMENT_SIZE) {
-                    res3.b.l = GetValue(WORKING_REG_A.x + (((int16_t)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.b.b0;
+                    res3.b.l = GetValue(WORKING_REG_A.x + (((int16_t)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ DEST_REG_D.b.b0;
                     PutValue(WORKING_REG_A.x + (((int16_t)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     }
                   else {
-                    res3.b.l = GetValue(WORKING_REG_A.x + (((int32_t)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.b.b0;
+                    res3.b.l = GetValue(WORKING_REG_A.x + (((int32_t)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ DEST_REG_D.b.b0;
                     PutValue(WORKING_REG_A.x + (((int32_t)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.b.l);
                     }
                   break;
                 case WORD_SIZE:
                   if(!DISPLACEMENT_SIZE) {
-                    res3.w = GetShortValue(WORKING_REG_A.x + (((int16_t)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.w.l;
+                    res3.w = GetShortValue(WORKING_REG_A.x + (((int16_t)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ DEST_REG_D.w.l;
                     PutShortValue(WORKING_REG_A.x + (((int16_t)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     }
                   else {
-                    res3.w = GetShortValue(WORKING_REG_A.x + (((int32_t)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.w.l;
+                    res3.w = GetShortValue(WORKING_REG_A.x + (((int32_t)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ DEST_REG_D.w.l;
                     PutShortValue(WORKING_REG_A.x + (((int32_t)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.w);
                     }
                   break;
                 case DWORD_SIZE:
                   if(!DISPLACEMENT_SIZE) {
-                    res3.x = GetIntValue(WORKING_REG_A.x + (((int16_t)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.x;
+                    res3.x = GetIntValue(WORKING_REG_A.x + (((int16_t)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ DEST_REG_D.x;
                     PutIntValue(WORKING_REG_A.x + (((int16_t)DISPLACEMENT_REG.w.l)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     }
                   else {
-                    res3.x = GetIntValue(WORKING_REG_A.x + (((int32_t)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ WORKING_REG_D.x;
+                    res3.x = GetIntValue(WORKING_REG_A.x + (((int32_t)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l) ^ DEST_REG_D.x;
                     PutIntValue(WORKING_REG_A.x + (((int32_t)DISPLACEMENT_REG.x)<<DISPLACEMENT_SCALE) + (signed char)Pipe2.b.l,res3.x);
                     }
                   break;
@@ -9144,20 +9178,26 @@ aggFlagAX:
                   case BYTE_SIZE:
                     _f.CCR.Zero=!res3.b.l;
                     _f.CCR.Sign=!!(res3.b.l & 0x80);
-                    _f.CCR.Carry=!!(res3.b.h);
-										_f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.l ^ res1.b.l ^ res2.b.l) & 0x80);
+                    _f.CCR.Carry= !!((res2.b.l & 0x80) & (res1.b.l & 0x80)) | !!((~res3.b.l & 0x80) &
+                      (res1.b.l & 0x80)) | !!((res2.b.l & 0x80) & (~res3.b.l & 0x80));
+                    _f.CCR.Ovf= !!((res2.b.l & 0x80) & (res1.b.l & 0x80) & (~res3.b.l & 0x80)) |
+                      !!((~res2.b.l & 0x80) & (~res1.b.l & 0x80) & (res3.b.l & 0x80));
 										break;
 									case WORD_SIZE:
 										_f.CCR.Zero=!res3.w;
 										_f.CCR.Sign=!!(res3.b.h & 0x80);
-										_f.CCR.Carry=!!(HIWORD(res3.x));
-										_f.CCR.Ovf = _f.CCR.Carry != !!((res3.b.h ^ res1.b.h ^ res2.b.h) & 0x80);
+                    _f.CCR.Carry= !!((res2.b.h & 0x80) & (res1.b.h & 0x80)) | !!((~res3.b.h & 0x80) &
+                      (res1.b.h & 0x80)) | !!((res2.b.h & 0x80) & (~res3.b.h & 0x80));
+                    _f.CCR.Ovf= !!((res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
+                      !!((~res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80));
                     break;
                   case DWORD_SIZE:
                     _f.CCR.Zero=!res3.x;
                     _f.CCR.Sign=!!(res3.x & 0x80000000);
-                    _f.CCR.Carry=!!(((unsigned long long)res1.x + (unsigned long long)res2.x + _f.CCR.Ext) >> 32);
-				            _f.CCR.Ovf = _f.CCR.Carry != !!((res3.x ^ res1.x ^ res2.x) & 0x80000000);
+                  _f.CCR.Carry= !!((res2.x & 0x80000000) & (res1.x & 0x80000000)) | !!((~res3.x & 0x80000000) &
+                    (res1.x & 0x80000000)) | !!((res2.x & 0x80000000) & (~res3.x & 0x80000000));
+                  _f.CCR.Ovf= !!((res2.x & 0x80000000) & (res1.x & 0x80000000) & (~res3.x & 0x80000000)) |
+                    !!((~res2.x & 0x80000000) & (~res1.x & 0x80000000) & (res3.x & 0x80000000));
                     break;
                   }
                 _f.CCR.Ext=_f.CCR.Carry;

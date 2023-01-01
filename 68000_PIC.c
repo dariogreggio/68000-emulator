@@ -89,9 +89,9 @@
 
 
 const char CopyrightString[]= {'6','8','0','0','0',' ','E','m','u','l','a','t','o','r',' ','v',
-	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '3','1','/','1','2','/','2','2', 0 };
+	VERNUMH+'0','.',VERNUML/10+'0',(VERNUML % 10)+'0',' ','-',' ', '0','1','/','0','1','/','2','3', 0 };
 
-const char Copyr1[]="(C) Dario's Automation 2022 - G.Dar\xd\xa\x0";
+const char Copyr1[]="(C) Dario's Automation 2022-2023 - G.Dar\xd\xa\x0";
 
 
 
@@ -4297,7 +4297,7 @@ const unsigned short int QL_JS_BIN[]= {    // QL_js.bin
   /*1B70:*/ 0x44D8, 0x4496, 0x0C6F, 0x44D0, 0x44D8, 0x4494, 0x046F, 0x44E4, 
   /*1B80:*/ 0x754E, 0x4F58, 0xDE60, 0x0174, 0x284A, 0x4300, 0x3C6E, 0xBA4E, 
   /*1B90:*/ 0x6200, 0x1660, 0x0074, 0x284A, 0x4300, 0x0E6E, 0x4211, 0x4300, 
-  /*1BA0:*/ 0x2860, 0x2814, 0x4300, 0x2267, 0x0244, 0xBA4E, 0x2200, 0x1C6D, 
+  /*1BA0:*/ 0x2860,  0x2814, 0x4300 , 0x2267, 0x0244, 0xBA4E, 0x2200, 0x1C6D, 
   /*1BB0:*/ 0x4211, 0x4300, 0x2820, 0x1800, 0xA8D0, 0x2200, 0x0032, 0x4048, 
   /*1BC0:*/ 0xA84C, 0x0C00, 0x2600, 0xBA4E, 0x8009, 0x0070, 0x754E, 0x2820, 
   /*1BD0:*/ 0x2200, 0x1A6B, 0x404A, 0x166B, 0xA8D0, 0x2600, 0x68B0, 0x1E00, 
@@ -7562,7 +7562,7 @@ row 6 will return 8 (2^3 = 8).
       Keyboard[0] = 48;
 			break;
 		case '\n':
-//      Keyboard[0] = 48;
+      Keyboard[0] = 48;
 			break;
 		case '\x1b':
       Keyboard[0] = 51;
@@ -7607,7 +7607,7 @@ keycommand:
 
   Keyboard[2] = 1;
 
-// RIMETTERE  
+//   
   if(IRQenable & 0b01000000)        //1=attivi
     KBDIRQ=1;
   return;
@@ -7623,7 +7623,7 @@ no_irq:
 BYTE whichKeysFeed=0;
 char keysFeed[32]={0};
 volatile BYTE keysFeedPtr=255;
-const char *keysFeed1="\x90";			// 0x91=145=F2 per andare in TV mode al boot; 0x90=F1=monitor
+const char *keysFeed1="\x91";			// 0x91=145=F2 per andare in TV mode al boot; 0x90=F1=monitor
 const char *keysFeed2="PRINT \"Ciao\"\n";
 const char *keysFeed3="LIST\n";
 const char *keysFeed4="MODE 8\n";
@@ -7643,11 +7643,13 @@ void __ISR(_TIMER_3_VECTOR,ipl4AUTO) TMR_ISR(void) {
   if(divider>=32) {   // 50 Hz per TOD
     divider=0;
 //    CIA1IRQ=1;
+    
+    if(IRQenable & 0b00100000)        //1=attivi
+      MDVIRQ=1;     // proviamo...
+    
     }
 
 
-    if(IRQenable & 0b00100000)        //1=attivi
-      MDVIRQ=1;     // proviamo...
   
   dividerTim++;
   if(dividerTim>=1600) {   // 1Hz RTC
@@ -7743,12 +7745,14 @@ void __ISR(_TIMER_3_VECTOR,ipl4AUTO) TMR_ISR(void) {
         }
       else {
         keysFeedPhase=0;
-//        emulateKBD(NULL);
+        emulateKBD(NULL);
         keysFeedPtr++;
 wait_kbd: ;
         }
       }
     }
+  else
+    keysFeedPtr=255;  
   
 fine:
   IFS0CLR = _IFS0_T3IF_MASK;

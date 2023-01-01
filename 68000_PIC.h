@@ -1,7 +1,7 @@
 //---------------------------------------------------------------------------
 //
-#ifndef _Z80_PIC_INCLUDED
-#define _Z80_PIC_INCLUDED
+#ifndef _68000_PIC_INCLUDED
+#define _68000_PIC_INCLUDED
 
 //---------------------------------------------------------------------------
 
@@ -34,13 +34,11 @@
 
 #define US_TO_CT_TICKS  (CPU_CT_HZ/1000000UL)    // uS to CoreTimer Ticks
     
-#define VERNUML 2
+#define VERNUML 4
 #define VERNUMH 1
 
-//#define ZX80 1
-//#define ZX81 1
+
 //#define SKYNET 1
-#define NEZ80 1
 
 
 typedef char BOOL;
