@@ -112,6 +112,123 @@ extern volatile PIC32_RTCC_DATE currentDate;
 extern volatile PIC32_RTCC_TIME currentTime;
 
 
+union __attribute__((__packed__)) DWORD_BYTE {
+  BYTE b[4];
+  DWORD d;
+  };
+union __attribute__((__packed__)) WORD_BYTE {
+  BYTE b[2];
+  WORD w;
+  };
+union __attribute__((__packed__)) PIPE {
+	DWORD d;
+	struct __attribute__((__packed__)) {
+		WORD dummy;
+  	WORD w;     // per quando serve 1 word sola...
+		};
+	BYTE bd[8];
+	WORD wd[4];
+	DWORD dd[2];
+	struct __attribute__((__packed__)) {
+		WORD l;
+		WORD h;
+		} ww;
+	struct __attribute__((__packed__)) {
+		BYTE u;
+		BYTE u2;
+		BYTE l;
+		BYTE h;		 // oppure spostare la pipe quando ci sono le istruzioni lunghe 4+...
+		} b;
+	};
+  union __attribute__((__packed__)) REG {
+    DWORD d;
+    struct __attribute__((__packed__)) { 
+      WORD l;
+      WORD h;
+      } w;
+    struct __attribute__((__packed__)) { 
+      BYTE b0;
+      BYTE b1;
+      BYTE b2;
+      BYTE b3;
+      } b;
+    };
+	union __attribute__((__packed__)) D_REGISTERS {
+		BYTE  b[32];
+	  union REG r[8];
+		} regsD;
+	union __attribute__((__packed__)) A_REGISTERS {   // questi SEGUONO i D (v. DISPLACEMENT_REG e anche MOVEM)
+		BYTE  b[32];
+	  union REG r[8];
+		} regsA;
+#define ID_CARRY 0x1
+#define ID_OVF 0x2
+#define ID_ZERO 0x4
+#define ID_SIGN 0x8
+#define ID_EXT 0x10
+  union __attribute__((__packed__)) _CCR {
+    BYTE b;
+    struct __attribute__((__packed__)) {
+      unsigned int Carry: 1;
+      unsigned int Ovf: 1;
+      unsigned int Zero: 1;
+      unsigned int Sign: 1;
+      unsigned int Ext: 1;
+      unsigned int unused: 11;
+      };
+    };
+  union __attribute__((__packed__)) _SR {
+    WORD w;
+    struct __attribute__((__packed__)) {
+      unsigned int Carry: 1;
+      unsigned int Ovf: 1;
+      unsigned int Zero: 1;
+      unsigned int Sign: 1;
+      unsigned int Ext: 1;
+      unsigned int unused: 3;
+      unsigned int IRQMask: 3;
+      unsigned int unused2: 2;    // su 68020 ecc qua c'è Master/Interrupt
+#ifdef MC68020
+#endif
+      unsigned int Supervisor: 1;
+      unsigned int unused3: 1;    // su 68020 ecc questo è Trace0 e il seg. Trace1
+#ifdef MC68020
+#endif
+      unsigned int Trace: 1;
+      };
+    };
+	union __attribute__((__packed__)) REGISTRO_F {
+    SWORD w;
+    union _CCR CCR;
+    union _SR SR;
+		};
+  union __attribute__((__packed__)) RESULT {
+    struct __attribute__((__packed__)) {
+      BYTE l;
+      BYTE h;
+      } b;
+    struct __attribute__((__packed__)) {
+      BYTE b1;
+      BYTE b2;
+      BYTE b3;
+      BYTE b4;      // cmq non conviene usare b4 rispetto a int...
+      } bb;
+    WORD w;
+    DWORD d;
+    };
+struct ADDRESS_EXCEPTION {
+  DWORD addr;
+  union {
+    WORD w;
+    struct {
+      unsigned short int fc:3;
+      unsigned short int in:1;
+      unsigned short int rw:1;
+      };
+    } descr;
+  BYTE active;
+  };
+
 
 void Timer_Init(void);
 void PWM_Init(void);
