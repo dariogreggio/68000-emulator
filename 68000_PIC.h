@@ -132,7 +132,7 @@ int Emulate(int);
 #define RAM_SIZE 0x20000            // 128KB standard
 #define ROM_START 0x00000
 #define ROM_SIZE 0x0c000
-#define ROM_SIZE2 0x04000
+//#define ROM_SIZE2 0x04000
 int UpdateScreen(SWORD,SWORD);
 #elif MICHELEFABBRI
 #define RAM_START 0x10000

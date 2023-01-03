@@ -105,7 +105,7 @@ struct ADDRESS_EXCEPTION {
       };
     } descr;
   BYTE active;
-  } AddressExcep;
+  } AddressExcep,BusExcep /**/;
 #define MAX_WATCHDOG 100      // x30mS v. sotto
 WORD WDCnt=MAX_WATCHDOG;
 BYTE ColdReset=1;
@@ -383,12 +383,19 @@ $18000  Real-time clock byte 0  Real-time clock reset*/
     }
   
 #endif
+  else {
+    BusExcep.active=1;
+    BusExcep.addr=t;
+    BusExcep.descr.in=1;
+    BusExcep.descr.rw=1;
+    // finire...
+    }
   
 	return i;
 	}
 
 SWORD GetShortValue(DWORD t) {
-	register SWORD i;
+	union PIPE pipe;
 
   if(t & 1) {
     AddressExcep.active=1;
@@ -397,29 +404,38 @@ SWORD GetShortValue(DWORD t) {
     AddressExcep.descr.rw=1;
     return 0;
     }
-	if(t < ROM_SIZE) {			// 
-		i=MAKEWORD(rom_seg[t+1],rom_seg[t]);
+	if(t < ROM_SIZE-1) {			// 
+    pipe.bd[0]=rom_seg[t+1];
+    pipe.bd[1]=rom_seg[t+0];
 		}
 #ifdef ROM_SIZE2
-	else if(t < ROM_SIZE2) {			// cartridge
+	else if(t < ROM_SIZE2-1) {			// cartridge
 		t-=ROM_SIZE;
 		i=MAKEWORD(rom_seg[t+1],rom_seg[t]);
 		}
 #endif
-	else if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {
+	else if(t >= RAM_START && t < (RAM_START+RAM_SIZE-1)) {
 		t-=RAM_START;
-		i=MAKEWORD(ram_seg[t+1],ram_seg[t]);
+    pipe.bd[0]=ram_seg[t+1];
+    pipe.bd[1]=ram_seg[t+0];
 		}
 #ifdef QL
   else if(t>=IO_BASE_ADDRESS && t<IO_BASE_ADDRESS+0x100) {        //   I/O
     }
 #elif MICHELEFABBRI
 #endif
-	return i;
+  else {
+    BusExcep.active=1;
+    BusExcep.addr=t;
+    BusExcep.descr.in=1;
+    BusExcep.descr.rw=1;
+    // finire...
+    }
+	return pipe.wd[0];
 	}
 
 DWORD GetIntValue(DWORD t) {
-	register DWORD i;
+	union PIPE pipe;
 
   if(t & 1) {
     AddressExcep.active=1;
@@ -428,11 +444,14 @@ DWORD GetIntValue(DWORD t) {
     AddressExcep.descr.rw=1;
     return 0;
     }
-	if(t < ROM_SIZE) {			// 
-		i=MAKELONG(MAKEWORD(rom_seg[t+3],rom_seg[t+2]),MAKEWORD(rom_seg[t+1],rom_seg[t+0]));
+	if(t < ROM_SIZE-3) {			// 
+    pipe.bd[0]=rom_seg[t+3];
+    pipe.bd[1]=rom_seg[t+2];
+    pipe.bd[2]=rom_seg[t+1];
+    pipe.bd[3]=rom_seg[t+0];
 		}
 #ifdef ROM_SIZE2
-	else if(t < ROM_SIZE2) {			// cartridge
+	else if(t < ROM_SIZE2-3) {			// cartridge
 		t-=ROM_SIZE;
 		i=MAKELONG(MAKEWORD(rom_seg[t+3],rom_seg[t+2]),MAKEWORD(rom_seg[t+1],rom_seg[t+0]));
 		}
@@ -441,17 +460,30 @@ DWORD GetIntValue(DWORD t) {
   else if(t>=IO_BASE_ADDRESS && t<IO_BASE_ADDRESS+0x100) {       // I/O
     switch(t & 0x000ff) {
       case 0:
-    		i=MAKELONG(MAKEWORD(RTC.b[3],RTC.b[2]),MAKEWORD(RTC.b[1],RTC.b[0]));
+        pipe.bd[0]=RTC.b[3];
+        pipe.bd[1]=RTC.b[2];
+        pipe.bd[2]=RTC.b[1];
+        pipe.bd[3]=RTC.b[0];
         break;
       }
     }
 #elif MICHELEFABBRI
 #endif
-	else if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {
+	else if(t >= RAM_START && t < (RAM_START+RAM_SIZE-3)) {
 		t-=RAM_START;
-		i=MAKELONG(MAKEWORD(ram_seg[t+3],ram_seg[t+2]),MAKEWORD(ram_seg[t+1],ram_seg[t+0]));
+    pipe.bd[0]=ram_seg[t+3];
+    pipe.bd[1]=ram_seg[t+2];
+    pipe.bd[2]=ram_seg[t+1];
+    pipe.bd[3]=ram_seg[t+0];
 		}
-	return i;
+  else {
+    BusExcep.active=1;
+    BusExcep.addr=t;
+    BusExcep.descr.in=1;
+    BusExcep.descr.rw=1;
+    // finire...
+    }
+	return pipe.d;
 	}
 
 SWORD GetPipe(DWORD t) {
@@ -464,29 +496,33 @@ SWORD GetPipe(DWORD t) {
     AddressExcep.descr.rw=1;
     return;
     }
-	if(t < ROM_SIZE) {			// 
+	if(t < ROM_SIZE-3) {			// 
     if(!(t & 3))
       ;
 #warning se indirizzo è long aligned, si potrebbero leggere 2 SWORD in un colpo solo VERIFICARE test e velocità
-		Pipe1=MAKEWORD(rom_seg[t+1],rom_seg[t]);
-    t+=2;
-		Pipe2.ww.h=MAKEWORD(rom_seg[t+1],rom_seg[t]);
-    t+=2;
-//		Pipe2.b.h=rom_seg[t++];
-//		Pipe2.b.u=rom_seg[t];
-		Pipe2.ww.l=MAKEWORD(rom_seg[t+1],rom_seg[t]);
+		Pipe1 =MAKEWORD(rom_seg[t+1],rom_seg[t]);
+		Pipe2.bd[0]=rom_seg[t+5];
+    Pipe2.bd[1]=rom_seg[t+4];
+		Pipe2.bd[2]=rom_seg[t+3];
+    Pipe2.bd[3]=rom_seg[t+2];
+//		Pipe2.ww.l=MAKEWORD(rom_seg[t+1],rom_seg[t]);
 		}
-	else if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {
+	else if(t >= RAM_START && t < (RAM_START+RAM_SIZE-3)) {
     if(!(t & 3))
       ;
 	  Pipe1=MAKEWORD(ram_seg[t+1],ram_seg[t]);
-    t+=2;
-		Pipe2.ww.h=MAKEWORD(ram_seg[t+1],ram_seg[t]);
-//		Pipe2.b.h=ram_seg[t++];
-//		Pipe2.b.u=ram_seg[t];
-    t+=2;
-		Pipe2.ww.l=MAKEWORD(ram_seg[t+1],ram_seg[t]);
+		Pipe2.bd[0]=ram_seg[t+5];
+    Pipe2.bd[1]=ram_seg[t+4];
+		Pipe2.bd[2]=ram_seg[t+3];
+    Pipe2.bd[3]=ram_seg[t+2];
 		}
+  else {
+    BusExcep.active=1;
+    BusExcep.addr=t;
+    BusExcep.descr.in=0;
+    BusExcep.descr.rw=1;
+    // finire...
+    }
 	return Pipe1;
 	}
 
@@ -502,30 +538,46 @@ BYTE AdvPipe(DWORD t,BYTE n) {    // questa va usata quando il primo parm dell'i
   switch(n) {
     case 2:
   		Pipe2.wd[1]=Pipe2.wd[0];
-      t+=4;
-      if(t < ROM_SIZE) {			// 
-        Pipe2.wd[0]=MAKEWORD(rom_seg[t+1],rom_seg[t]);
+      if(t < ROM_SIZE-5) {			// 
+        Pipe2.bd[0]=rom_seg[t+5];
+        Pipe2.bd[1]=rom_seg[t+4];
         }
-      else if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {
-        Pipe2.wd[0]=MAKEWORD(ram_seg[t+1],ram_seg[t]);
+      else if(t >= RAM_START && t < (RAM_START+RAM_SIZE-5)) {
+        Pipe2.bd[0]=ram_seg[t+5];
+        Pipe2.bd[1]=ram_seg[t+4];
+        }
+      else {
+        BusExcep.active=1;
+        BusExcep.addr=t;
+        BusExcep.descr.in=0;
+        BusExcep.descr.rw=1;
+        // finire...
         }
       break;
     case 4:
-      t+=4;
-      if(t < ROM_SIZE) {			// 
+      if(t < ROM_SIZE-7) {			// 
         if(!(t & 3))
           ;
     #warning se indirizzo è long aligned, si potrebbero leggere 2 SWORD in un colpo solo VERIFICARE test e velocità
-        Pipe2.wd[1]=MAKEWORD(rom_seg[t+1],rom_seg[t]);
-        t+=2;
-        Pipe2.wd[0]=MAKEWORD(rom_seg[t+1],rom_seg[t]);
+        Pipe2.bd[0]=rom_seg[t+7];
+        Pipe2.bd[1]=rom_seg[t+6];
+        Pipe2.bd[2]=rom_seg[t+5];
+        Pipe2.bd[3]=rom_seg[t+4];
         }
-      else if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {
+      else if(t >= RAM_START && t < (RAM_START+RAM_SIZE-7)) {
         if(!(t & 3))
           ;
-        Pipe2.wd[1]=MAKEWORD(ram_seg[t+1],ram_seg[t]);
-        t+=2;
-        Pipe2.wd[0]=MAKEWORD(ram_seg[t+1],ram_seg[t]);
+        Pipe2.bd[0]=ram_seg[t+7];
+        Pipe2.bd[1]=ram_seg[t+6];
+        Pipe2.bd[2]=ram_seg[t+5];
+        Pipe2.bd[3]=ram_seg[t+4];
+        }
+      else {
+        BusExcep.active=1;
+        BusExcep.addr=t;
+        BusExcep.descr.in=0;
+        BusExcep.descr.rw=1;
+        // finire...
         }
       break;
     }
@@ -1082,8 +1134,12 @@ writeRegRTC:
     ClWDPort;
     }
 #endif
-  else {      // boh??
-// pare di no..    DoAddressExcep=1;
+  else {
+    BusExcep.active=1;
+    BusExcep.addr=t;
+    BusExcep.descr.in=1;
+    BusExcep.descr.rw=0;
+    // finire...
     }
 
 	}
@@ -1100,7 +1156,7 @@ void PutShortValue(DWORD t,SWORD t1) {
     AddressExcep.descr.rw=0;
     return;
     }
-	if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {		// 
+	if(t >= RAM_START && t < (RAM_START+RAM_SIZE-1)) {		// 
 		t-=RAM_START;
 	  ram_seg[t++]=HIBYTE(t1);
 	  ram_seg[t]=LOBYTE(t1);
@@ -1110,8 +1166,12 @@ void PutShortValue(DWORD t,SWORD t1) {
     }
 #elif MICHELEFABBRI
 #endif
-  else {      // boh??
-// pare di no..    DoAddressExcep=1;
+  else {
+    BusExcep.active=1;
+    BusExcep.addr=t;
+    BusExcep.descr.in=1;
+    BusExcep.descr.rw=0;
+    // finire...
     }
 	}
 
@@ -1126,7 +1186,7 @@ void PutIntValue(DWORD t,DWORD t1) {
     AddressExcep.descr.in=1;
     AddressExcep.descr.rw=0;
     }
-	if(t >= RAM_START && t < (RAM_START+RAM_SIZE)) {		// 
+	if(t >= RAM_START && t < (RAM_START+RAM_SIZE-3)) {		// 
 		t-=RAM_START;
 	  ram_seg[t++]=HIBYTE(HIWORD(t1));
 	  ram_seg[t++]=LOBYTE(HIWORD(t1));
@@ -1149,8 +1209,12 @@ void PutIntValue(DWORD t,DWORD t1) {
     }
 #elif MICHELEFABBRI
 #endif
-  else {      // boh??
-// pare di no..    DoAddressExcep=1;
+  else {
+    BusExcep.active=1;
+    BusExcep.addr=t;
+    BusExcep.descr.in=1;
+    BusExcep.descr.rw=0;
+    // finire...
     }
   
 	}
@@ -1209,7 +1273,8 @@ void PutIntValue(DWORD t,DWORD t1) {
         }\
       }\
     }
-#define ADD64() {\
+// questo erano per potenziale bug in unsigned long long...
+#define ADD64() {\        
   _f.CCR.Carry=!!HIWORD((uint32_t)res1.w + (uint32_t)res2.w);\
   _f.CCR.Carry=!!HIWORD((res1.d>>16) + (res2.d>>16) + _f.CCR.Carry);\
   }
@@ -1357,7 +1422,7 @@ enum ADDRESSING_MODES {
       BYTE b1;
       BYTE b2;
       BYTE b3;
-      BYTE b4;
+      BYTE b4;      // cmq non conviene usare b4 rispetto a int...
       } bb;
     WORD w;
     DWORD d;
@@ -1525,7 +1590,7 @@ enum ADDRESSING_MODES {
         // e alzare
         }
       }
-    if(AddressExcep.active) {    // fare anche BusExcep!
+    if(AddressExcep.active) {    // 
       FC=0b110;
       _fsup=_f;
       if(!_f.SR.Supervisor)
@@ -1555,6 +1620,8 @@ enum ADDRESSING_MODES {
       printf("68K memory exception %u\r\n",_pc);
       
       _pc=GetIntValue(3*4);
+      }
+    if(BusExcep.active) {    // mettere
       }
     if(DoTrace) {
       DoTrace=0;
@@ -1846,7 +1913,7 @@ aggFlag1:
           case WORD_SIZE:
 aggFlag2:
             _f.CCR.Zero=!res3.w;
-            _f.CCR.Sign=!!(res3.b.h & 0x80);
+            _f.CCR.Sign=!!(res3.w & 0x8000);    // non cambia rispetto a accedere al byte..
             break;
           case DWORD_SIZE:
 aggFlag4:
@@ -2508,13 +2575,14 @@ aggFlagS:
     				_f.CCR.Ovf= !!(((~res2.b.l & 0x80) & (res1.b.l & 0x80) & (~res3.b.l & 0x80)) |
         			((res2.b.l & 0x80) & (~res1.b.l & 0x80) & (res3.b.l & 0x80)));
             break;
+            // unire i fattori e poi fare AND non migliora a 32bit e peggiora a 8/16...
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
-            _f.CCR.Sign=!!(res3.b.h & 0x80);
-    				_f.CCR.Carry= !!(((res2.b.h & 0x80) & (~res1.b.h & 0x80)) | ((res3.b.h & 0x80) &
-        			(~res1.b.h & 0x80)) | ((res2.b.h & 0x80) & (res3.b.h & 0x80)));
-    				_f.CCR.Ovf= !!(((~res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
-        			((res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80)));
+            _f.CCR.Sign=!!(res3.w & 0x8000);
+    				_f.CCR.Carry= !!(((res2.w & 0x8000) & (~res1.w & 0x8000)) | ((res3.w & 0x8000) &
+        			(~res1.w & 0x8000)) | ((res2.w & 0x8000) & (res3.w & 0x8000)));
+    				_f.CCR.Ovf= !!(((~res2.w & 0x8000) & (res1.w & 0x8000) & (~res3.w & 0x8000)) |
+        			((res2.w & 0x8000) & (~res1.w & 0x8000) & (res3.w & 0x8000)));
             break;
           case DWORD_SIZE:
             _f.CCR.Zero=!res3.d;
@@ -2782,11 +2850,11 @@ aggFlagA:
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
-            _f.CCR.Sign=!!(res3.b.h & 0x80);
-    				_f.CCR.Carry= !!(((res2.b.h & 0x80) & (res1.b.h & 0x80)) | ((~res3.b.h & 0x80) &
-        			(res1.b.h & 0x80)) | ((res2.b.h & 0x80) & (~res3.b.h & 0x80)));
-    				_f.CCR.Ovf= !!(((res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
-        			((~res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80)));
+            _f.CCR.Sign=!!(res3.w & 0x8000);
+    				_f.CCR.Carry= !!(((res2.w & 0x8000) & (res1.w & 0x8000)) | ((~res3.w & 0x8000) &
+        			(res1.w & 0x8000)) | ((res2.w & 0x8000) & (~res3.w & 0x8000)));
+    				_f.CCR.Ovf= !!(((res2.w & 0x8000) & (res1.w & 0x8000) & (~res3.w & 0x8000)) |
+        			((~res2.w & 0x8000) & (~res1.w & 0x8000) & (res3.w & 0x8000)));
             break;
           case DWORD_SIZE:
             _f.CCR.Zero=!res3.d;
@@ -3233,11 +3301,11 @@ aggFlagC:
             break;
           case WORD_SIZE:
             _f.CCR.Zero=!res3.w;
-            _f.CCR.Sign=!!(res3.b.h & 0x80);
-    				_f.CCR.Carry= !!(((res2.b.h & 0x80) & (~res1.b.h & 0x80)) | ((res3.b.h & 0x80) &
-        			(~res1.b.h & 0x80)) | ((res2.b.h & 0x80) & (res3.b.h & 0x80)));
-    				_f.CCR.Ovf= !!(((~res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
-        			((res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80)));
+            _f.CCR.Sign=!!(res3.w & 0x8000);
+    				_f.CCR.Carry= !!(((res2.w & 0x8000) & (~res1.w & 0x8000)) | ((res3.w & 0x8000) &
+        			(~res1.w & 0x8000)) | ((res2.w & 0x8000) & (res3.w & 0x8000)));
+    				_f.CCR.Ovf= !!(((~res2.w & 0x8000) & (res1.w & 0x8000) & (~res3.w & 0x8000)) |
+        			((res2.w & 0x8000) & (~res1.w & 0x8000) & (res3.w & 0x8000)));
             break;
           case DWORD_SIZE:
 aggFlagC4:
@@ -3890,11 +3958,11 @@ aggFlagSX:
             break;
           case WORD_SIZE:
             if(res3.w) _f.CCR.Zero=0;
-            _f.CCR.Sign=!!(res3.b.h & 0x80);
-    				_f.CCR.Carry= !!(((res2.b.h & 0x80) & (~res1.b.h & 0x80)) | ((res3.b.h & 0x80) &
-        			(~res1.b.h & 0x80)) | ((res2.b.h & 0x80) & (res3.b.h & 0x80)));
-    				_f.CCR.Ovf= !!(((~res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
-        			((res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80)));
+            _f.CCR.Sign=!!(res3.w & 0x8000);
+    				_f.CCR.Carry= !!(((res2.w & 0x8000) & (~res1.w & 0x8000)) | ((res3.w & 0x8000) &
+        			(~res1.w & 0x8000)) | ((res2.w & 0x8000) & (res3.w & 0x8000)));
+    				_f.CCR.Ovf= !!(((~res2.w & 0x8000) & (res1.w & 0x8000) & (~res3.w & 0x8000)) |
+        			((res2.w & 0x8000) & (~res1.w & 0x8000) & (res3.w & 0x8000)));
             break;
           case DWORD_SIZE:
             if(res3.d) _f.CCR.Zero=0;
@@ -4865,7 +4933,7 @@ trap_chk_6:
                 _pc+=AdvPipe(_pc,2);
                 break;
               }
-            res3.w = (res1.b.l & 0xf) - (res2.b.l & 0xf) - _f.CCR.Ext;
+            res3.w = (WORD)(res1.b.l & 0xf) - (WORD)(res2.b.l & 0xf) - _f.CCR.Ext;
             res3.w = (((res1.b.l & 0xf0) >> 4) - ((res2.b.l & 0xf0) >> 4) - (res3.b.h ? 1 : 0)) | 
                       res3.b.l;
             switch(ADDRESSING) {
@@ -4913,7 +4981,7 @@ trap_chk_6:
                 _pc+=2;
                 break;
               }
-            _f.CCR.Zero=!res3.b.l;
+            if(res3.b.l) _f.CCR.Zero=0;
             _f.CCR.Ext=_f.CCR.Carry=!!res3.b.h;
             goto noAggFlag;
             break;
@@ -6485,12 +6553,12 @@ do_bra:
                 if(OPERAND_SIZE == 0) {
                   res1.b.l = GetValue(--WORKING_REG_A.d);
                   res2.b.l = GetValue(--DEST_REG_A.d);
-                  res3.w = (res1.b.l & 0xf) - (res2.b.l & 0xf) - _f.CCR.Ext;
+                  res3.w = (WORD)(res1.b.l & 0xf) - (WORD)(res2.b.l & 0xf) - _f.CCR.Ext;
                   res3.w = (((res1.b.l & 0xf0) >> 4) - ((res2.b.l & 0xf0) >> 4) - (res3.b.h ? 1 : 0)) | 
                             res3.b.l;
                   PutValue(DEST_REG_A.d, res3.b.l);
                   }
-                _f.CCR.Zero=!res3.b.l;
+                if(res3.b.l) _f.CCR.Zero=0;
                 _f.CCR.Ext=_f.CCR.Carry=!!res3.b.h;
                 goto noAggFlag;
                 break;
@@ -8463,11 +8531,11 @@ do_bra:
                   case 0x00:     // ABCD v. anche SBCD DOVREBBE ANDARE ANCHE su DATAREG...
                     --WORKING_REG_A.d; res1.b.l = GetValue(WORKING_REG_A.d);
                     --DEST_REG_A.d; res2.b.l = GetValue(DEST_REG_A.d);
-                    res3.w = (res1.b.l & 0xf) + (res2.b.l & 0xf) + _f.CCR.Ext;
+                    res3.w = (WORD)(res1.b.l & 0xf) + (WORD)(res2.b.l & 0xf) + _f.CCR.Ext;
                     res3.w = (((res1.b.l & 0xf0) >> 4) + ((res2.b.l & 0xf0) >> 4) + (res3.b.h ? 1 : 0)) | 
                               res3.b.l;
                     PutValue(DEST_REG_A.d, res3.b.l);
-                    _f.CCR.Zero=!res3.b.l;
+                    if(res3.b.l) _f.CCR.Zero=0;
                     _f.CCR.Ext=_f.CCR.Carry=!!res3.b.h;
                     goto noAggFlag;
                     break;
@@ -9180,11 +9248,11 @@ aggFlagAX:
 										break;
 									case WORD_SIZE:
                     if(res3.w) _f.CCR.Zero=0;
-										_f.CCR.Sign=!!(res3.b.h & 0x80);
-                    _f.CCR.Carry= !!(((res2.b.h & 0x80) & (res1.b.h & 0x80)) | ((~res3.b.h & 0x80) &
-                      (res1.b.h & 0x80)) | ((res2.b.h & 0x80) & (~res3.b.h & 0x80)));
-                    _f.CCR.Ovf= !!(((res2.b.h & 0x80) & (res1.b.h & 0x80) & (~res3.b.h & 0x80)) |
-                      ((~res2.b.h & 0x80) & (~res1.b.h & 0x80) & (res3.b.h & 0x80)));
+										_f.CCR.Sign=!!(res3.w & 0x8000);
+                    _f.CCR.Carry= !!(((res2.w & 0x8000) & (res1.w & 0x8000)) | ((~res3.w & 0x8000) &
+                      (res1.w & 0x8000)) | ((res2.w & 0x8000) & (~res3.w & 0x8000)));
+                    _f.CCR.Ovf= !!(((res2.w & 0x8000) & (res1.w & 0x8000) & (~res3.w & 0x8000)) |
+                      ((~res2.w & 0x8000) & (~res1.w & 0x8000) & (res3.w & 0x8000)));
                     break;
                   case DWORD_SIZE:
                     if(res3.d) _f.CCR.Zero=0;
@@ -9702,9 +9770,9 @@ aggFlagAX:
               _f.CCR.Ovf=0;
               while(res2.b.l) {
                 if(ROTATE_DIRECTION) {
-                  _f.CCR.Ext=_f.CCR.Carry=!!(res3.b.h & 0x80);
+                  _f.CCR.Ext=_f.CCR.Carry=!!(res3.w & 0x8000);
                   res3.w <<= 1;
-                  if(_f.CCR.Carry && !(res3.b.h & 0x80))
+                  if(_f.CCR.Carry && !(res3.w & 0x8000))
                     _f.CCR.Ovf=1;   // SOLO ASL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
                   //ASL, Arithmetic shift left, sets the V flag if the MSB changes sign at any time during the shift.
                   }
@@ -9721,7 +9789,7 @@ aggFlagAX:
               _f.CCR.Carry=0;
               while(res2.b.l) {
                 if(ROTATE_DIRECTION) {
-                  _f.CCR.Ext=_f.CCR.Carry=!!(res3.b.h & 0x80);
+                  _f.CCR.Ext=_f.CCR.Carry=!!(res3.w & 0x8000);
                   res3.w <<= 1;
                   }
                 else {
@@ -9736,7 +9804,7 @@ aggFlagAX:
               res3.w = res1.w;
               while(res2.b.l) {
                 if(ROTATE_DIRECTION) {  // rotate direction
-                  f2.Ext=!!(res3.b.h & 0x80);
+                  f2.Ext=!!(res3.w & 0x8000);
                   res3.w <<= 1;
                   if(_f.CCR.Ext)
                     res3.w |= 1;
@@ -9746,7 +9814,7 @@ aggFlagAX:
                   f2.Ext=res3.b.l & 0x01;
                   res3.w >>= 1;
                   if(_f.CCR.Ext)
-                    res3.b.h |= 0x80;
+                    res3.w |= 0x8000;
                   _f.CCR.Ext=f2.Ext;
                   }
                 res2.b.l--;
@@ -9759,16 +9827,16 @@ aggFlagAX:
               _f.CCR.Carry=0;
               while(res2.b.l) {
                 if(ROTATE_DIRECTION) { // rotate direction
-                  _f.CCR.Carry=!!(res3.b.h & 0x80);
+                  _f.CCR.Carry=!!(res3.w & 0x8000);
                   res3.w <<= 1;
-                  if(res3.b.h & 0x80)
+                  if(res3.w & 0x8000)
                     res3.b.l |= 1;
                   }
                 else {
                   _f.CCR.Carry=res3.b.l & 0x01;
                   res3.w >>= 1;
                   if(res3.b.l & 1)
-                    res3.b.h |= 0x80;
+                    res3.w |= 0x8000;
                   }
                 }
               
@@ -9777,7 +9845,7 @@ aggFlagRZO:
 
 aggFlagRZ:
               _f.CCR.Zero=!res3.w;
-              _f.CCR.Sign=!!(res3.b.h & 0x80);
+              _f.CCR.Sign=!!(res3.w & 0x8000);
               break;
             }
         
@@ -9930,9 +9998,9 @@ aggFlagRZ1:
                   _f.CCR.Ovf=0;
                   while(res2.b.l) {
                     if(ROTATE_DIRECTION) {
-                      _f.CCR.Ext=_f.CCR.Carry=!!(res3.b.h & 0x80);
+                      _f.CCR.Ext=_f.CCR.Carry=!!(res3.w & 0x8000);
                       res3.w <<= 1;
-                      if(_f.CCR.Carry && !(res3.b.h & 0x80))
+                      if(_f.CCR.Carry && !(res3.w & 0x8000))
                         _f.CCR.Ovf=1;   // SOLO ASL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
                       //ASL, Arithmetic shift left, sets the V flag if the MSB changes sign at any time during the shift.
                       }
@@ -9948,7 +10016,7 @@ aggFlagRZ1:
                   _f.CCR.Carry=0;
                   while(res2.b.l) {
                     if(ROTATE_DIRECTION) {
-                      _f.CCR.Ext=_f.CCR.Carry=!!(res3.b.h & 0x80);
+                      _f.CCR.Ext=_f.CCR.Carry=!!(res3.w & 0x8000);
                       res3.w <<= 1;
                       }
                     else {
@@ -9962,7 +10030,7 @@ aggFlagRZ1:
                 case 0b10000:   //ROXd
                   while(res2.b.l) {
                     if(ROTATE_DIRECTION) {  // rotate direction
-                      f2.Ext=!!(res3.b.h & 0x80);
+                      f2.Ext=!!(res3.w & 0x8000);
                       res3.w <<= 1;
                       if(_f.CCR.Ext)
                         res3.b.l |= 1;
@@ -9972,7 +10040,7 @@ aggFlagRZ1:
                       f2.Ext=res3.b.l & 0x01;
                       res3.w >>= 1;
                       if(_f.CCR.Ext)
-                        res3.b.h |= 0x80;
+                        res3.w |= 0x8000;
                       _f.CCR.Ext=f2.Ext;
                       }
                     res2.b.l--;
@@ -9984,7 +10052,7 @@ aggFlagRZ1:
                   _f.CCR.Carry=0;
                   while(res2.b.l) {
                     if(ROTATE_DIRECTION) { // rotate direction
-                      _f.CCR.Carry=!!(res3.b.h & 0x80);
+                      _f.CCR.Carry=!!(res3.w & 0x8000);
                       res3.w <<= 1;
                       if(_f.CCR.Carry)
                         res3.b.l |= 1;
@@ -9993,7 +10061,7 @@ aggFlagRZ1:
                       _f.CCR.Carry=res3.b.l & 0x01;
                       res3.w >>= 1;
                       if(_f.CCR.Carry)
-                        res3.b.h |= 0x80;
+                        res3.w |= 0x8000;
                       }
                     res2.b.l--;
                     }
@@ -10003,7 +10071,7 @@ aggFlagRZO2:
 
 aggFlagRZ2:
                   _f.CCR.Zero=!res3.w;
-                  _f.CCR.Sign=!!(res3.b.h & 0x80);
+                  _f.CCR.Sign=!!(res3.w & 0x8000);
                   WORKING_REG_D.w.l = res3.w;
                   break;
                 }
