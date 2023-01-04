@@ -34,11 +34,9 @@
 
 #define US_TO_CT_TICKS  (CPU_CT_HZ/1000000UL)    // uS to CoreTimer Ticks
     
-#define VERNUML 4
+#define VERNUML 5
 #define VERNUMH 1
 
-
-//#define SKYNET 1
 
 
 typedef char BOOL;
@@ -65,6 +63,8 @@ typedef DWORD COLORREF;
 #define _TFTWIDTH  		160     //the REAL W resolution of the TFT
 #define _TFTHEIGHT 		128     //the REAL H resolution of the TFT
 
+//#define SKYNET 1
+//#define QL 1          v. progetto
 #ifdef QL
 #define HORIZ_SIZE 128
 #define VERT_SIZE 256
@@ -156,11 +156,11 @@ union __attribute__((__packed__)) PIPE {
 	union __attribute__((__packed__)) D_REGISTERS {
 		BYTE  b[32];
 	  union REG r[8];
-		} regsD;
-	union __attribute__((__packed__)) A_REGISTERS {   // questi SEGUONO i D (v. DISPLACEMENT_REG e anche MOVEM)
+		};
+	union __attribute__((__packed__)) A_REGISTERS {   // lascio 2 def separate ev. per gestire A7/SP
 		BYTE  b[32];
 	  union REG r[8];
-		} regsA;
+		};
 #define ID_CARRY 0x1
 #define ID_OVF 0x2
 #define ID_ZERO 0x4
