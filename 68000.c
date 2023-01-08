@@ -52,11 +52,11 @@ BYTE ColdReset=1;
 union PIPE Pipe2;
 
 
-#define WORKING_REG_A (regsA.r[((Pipe1.b[0]) & 7)])
-#define WORKING_REG_D (regsD.r[((Pipe1.b[0]) & 7)])
-#define ALL_REGS regsD
-#define DEST_REG_A (regsA.r[((Pipe1.b[1] >> 1) & 7)])
-#define DEST_REG_D (regsD.r[((Pipe1.b[1] >> 1) & 7)])
+#define WORKING_REG_A (regsA[((Pipe1.b[0]) & 7)])
+#define WORKING_REG_D (regsD[((Pipe1.b[0]) & 7)])
+//#define ALL_REGS regsD
+#define DEST_REG_A (regsA[((Pipe1.b[1] >> 1) & 7)])
+#define DEST_REG_D (regsD[((Pipe1.b[1] >> 1) & 7)])
 #define ADDRESSING (Pipe1.b[0] & 0b00111000)
 #define ADDRESSING2 ((Pipe1.w & 0b0000000111000000) >> 3)      // per MOVE/MOVEA...
 enum ADDRESSING_MODES {
@@ -84,7 +84,7 @@ enum ADDRESSING_MODES {
 #define	WORD_SIZE 0x40
 #define	DWORD_SIZE 0x80
 #define	SIZE_ELSE 0xC0
-#define DISPLACEMENT_REG (ALL_REGS.r[((Pipe2.b.h >> 4) /*& 15*/)])   // sia D che A (v.sopra)
+#define DISPLACEMENT_REG (ALL_REGS[((Pipe2.b.h >> 4) /*& 15*/)])   // sia D che A (v.sopra)
 #define DISPLACEMENT_SIZE (Pipe2.b.h & 0b00001000)
 #ifdef MC68020
 #define DISPLACEMENT_SCALE ((Pipe2.b.h & 0b00000110) >> 1)
@@ -106,7 +106,7 @@ enum ADDRESSING_MODES {
     BYTE i; WORD j;\
     for(i=0,j=1; i<16; i++,j<<=1) {\
       if(res2.w & j) {\
-        PutShortValue(res3.d, ALL_REGS.r[i].w.l);\
+        PutShortValue(res3.d, ALL_REGS[i].w.l);\
         res3.d+=2;\
         }\
       }\
@@ -115,7 +115,7 @@ enum ADDRESSING_MODES {
     BYTE i; WORD j;\
     for(i=0,j=1; i<16; i++,j<<=1) {\
       if(res2.w & j) {\
-        PutIntValue(res3.d, ALL_REGS.r[i].d);\
+        PutIntValue(res3.d, ALL_REGS[i].d);\
         res3.d+=4;\
         }\
       }\
@@ -125,7 +125,7 @@ enum ADDRESSING_MODES {
     for(i=15,j=1; i>=0; i--,j<<=1) {\
       if(res2.w & j) {\
         res3.d-=2;\
-        PutShortValue(res3.d, ALL_REGS.r[i].w.l);\
+        PutShortValue(res3.d, ALL_REGS[i].w.l);\
         }\
       }\
     }\
@@ -134,7 +134,7 @@ enum ADDRESSING_MODES {
     for(i=15,j=1; i>=0; i--,j<<=1) {\
       if(res2.w & j) {\
         res3.d-=4;\
-        PutIntValue(res3.d, ALL_REGS.r[i].d);\
+        PutIntValue(res3.d, ALL_REGS[i].d);\
         }\
       }\
     }
@@ -142,7 +142,7 @@ enum ADDRESSING_MODES {
     BYTE i; WORD j;\
     for(i=0,j=1; i<16; i++,j<<=1) {\
       if(res2.w & j) {\
-        ALL_REGS.r[i].d = (int16_t)GetShortValue(res3.d);\
+        ALL_REGS[i].d = (int16_t)GetShortValue(res3.d);\
         res3.d+=2;\
         }\
       }\
@@ -151,7 +151,7 @@ enum ADDRESSING_MODES {
     BYTE i; WORD j;\
     for(i=0,j=1; i<16; i++,j<<=1) {\
       if(res2.w & j) {\
-        ALL_REGS.r[i].d = GetIntValue(res3.d);\
+        ALL_REGS[i].d = GetIntValue(res3.d);\
         res3.d+=4;\
         }\
       }\
@@ -234,10 +234,13 @@ union WORD_BYTE GetPipe(DWORD);
 int Emulate(int mode) {
   union WORD_BYTE Pipe1;      // usare variabili locali migliora codice... su PIC32
   // mettere qua anche pip2, spostare...
-  union D_REGISTERS regsD;
-	union A_REGISTERS regsA;   // questi SEGUONO i D (v. DISPLACEMENT_REG e anche MOVEM)
+//	union A_REGISTERS regsA;   // questi SEGUONO i D (v. DISPLACEMENT_REG e anche MOVEM)
+//  union D_REGISTERS regsD;
+ 	union REG ALL_REGS[16];
+  union REG *regsD=&ALL_REGS[0];
+	union REG *regsA=&ALL_REGS[8];   // con ottimizzazioni vengono invertiti... £$%@#
 //	DWORD _sp=0;
-#define _sp regsA.r[7].d    // A7 == SP, dice; gestisco 2 distinti a7, che swappo quando SR.Supervisor cambia
+#define _sp regsA[7].d    // A7 == SP, dice; gestisco 2 distinti a7, che swappo quando SR.Supervisor cambia
   DWORD a7S,a7U;
 	DWORD _pc=0;
   
@@ -343,11 +346,11 @@ int Emulate(int mode) {
       FC=0b111;
       _fIRQ=_f;
       if(!_f.SR.Supervisor)
-        a7U=regsA.r[7].d;
+        a7U=regsA[7].d;
       else
-        a7S=regsA.r[7].d;
+        a7S=regsA[7].d;
       _f.SR.Supervisor=1;     // non mi è chiaro se sono nested o no...
-      regsA.r[7].d=a7S;
+      regsA[7].d=a7S;
       _f.SR.Trace=0;   // supervisor, area programma VERIFICARE solo >68020?
 #ifdef MC68020
 //      _f.SR.MasterInterrupt=1;   // supervisor, area programma VERIFICARE solo >68020?
@@ -397,11 +400,11 @@ int Emulate(int mode) {
       FC=0b110;
       _fsup=_f;
       if(!_f.SR.Supervisor)
-        a7U=regsA.r[7].d;
+        a7U=regsA[7].d;
       else
-        a7S=regsA.r[7].d;
+        a7S=regsA[7].d;
       _f.SR.Supervisor=1;
-      regsA.r[7].d=a7S;
+      regsA[7].d=a7S;
       _sp-=4;
       PutIntValue(_sp,_pc); // low word prima
       _sp-=2;
@@ -460,7 +463,7 @@ int Emulate(int mode) {
           keysFeedPtr=254;
         }
 
-      LED2^=1;    // ~1.5uS 4/1/23 (oscilla tra 1 e 2)
+      LED2^=1;    // ~1.5uS 4/1/23 O0 (oscilla tra 1 e 2); con O3 (thx RKarnik) tra 500 e 1us 7/1/23
 
     
 /*      if(_pc >= 0x4000) {
@@ -488,12 +491,12 @@ int Emulate(int mode) {
                   res3.w = _f.SR.w | Pipe2.w;
                   
 aggSR:
-                  a7S=regsA.r[7].d;
+                  a7S=regsA[7].d;
                   _f.SR.w=res3.w;
                   if(!_f.SR.Supervisor)
-                    regsA.r[7].d=a7U;
+                    regsA[7].d=a7U;
                   else
-                    regsA.r[7].d=a7S;
+                    regsA[7].d=a7S;
 	                goto noAggFlag;
                   }
                 else {
@@ -1179,19 +1182,19 @@ doBit2:   ;
               case BYTE_SIZE:
                 res1.b.l = WORKING_REG_D.b.b0;
                 res2.b.l = Pipe2.b.l;
-                WORKING_REG_D.b.b0 = res3.b.l = res1.b.l - res2.b.l;
+                res3.b.l = WORKING_REG_D.b.b0 = res1.b.l - res2.b.l;
 		            _pc+=2;
                 break;
               case WORD_SIZE:
                 res1.w = WORKING_REG_D.w.l;
                 res2.w = Pipe2.w;
-                WORKING_REG_D.w.l = res3.w = res1.w - res2.w;
+                res3.w = WORKING_REG_D.w.l = res1.w - res2.w;
 		            _pc+=2;
                 break;
               case DWORD_SIZE:
                 res1.d = WORKING_REG_D.d;
                 res2.d = Pipe2.d;
-                WORKING_REG_D.d = res3.d = res1.d - res2.d;
+                res3.d = WORKING_REG_D.d = res1.d - res2.d;
 		            _pc+=4;
                 break;
               }
@@ -1390,21 +1393,21 @@ aggFlagS:
                     _pc+=AdvPipe(_pc,2);
                     res1.b.l = GetValue((int16_t)Pipe2.w);
 										res3.b.l = res1.b.l + res2.b.l;
-                    PutValue((int16_t)Pipe2.w, res3.b.l);
+                    PutValue((int16_t)Pipe2.w,res3.b.l);
                     break;
                   case WORD_SIZE:
                     res2.w = Pipe2.w;
                     _pc+=AdvPipe(_pc,2);
                     res1.w = GetShortValue((int16_t)Pipe2.w);
 										res3.w = res1.w + res2.w;
-                    PutShortValue((int16_t)Pipe2.w, res3.w);
+                    PutShortValue((int16_t)Pipe2.w,res3.w);
                     break;
                   case DWORD_SIZE:
                     res2.d = Pipe2.d;
                     _pc+=AdvPipe(_pc,4);
                     res1.d = GetIntValue((int16_t)Pipe2.w);
 										res3.d = res1.d + res2.d;
-                    PutIntValue((int16_t)Pipe2.w, res3.d);
+                    PutIntValue((int16_t)Pipe2.w,res3.d);
                     break;
                   }
                 _pc+=2;
@@ -2183,10 +2186,10 @@ aggFlagC4:
             break;
           case ADDRPINCADD:   // (An)+
             PutValue(DEST_REG_A.d,res3.b.l);
-            DEST_REG_A.d += (Pipe1.b[1] & 0xe) == 0xe ? 2 : 1;
+            DEST_REG_A.d += ((Pipe1.b[1] & 0xe) == 0xe) ? 2 : 1;
             break;
           case ADDRPDECADD:   // -(An)
-            DEST_REG_A.d -= (Pipe1.b[1] & 0xe) == 0xe ? 2 : 1;
+            DEST_REG_A.d -= ((Pipe1.b[1] & 0xe) == 0xe) ? 2 : 1;
             PutValue(DEST_REG_A.d,res3.b.l);
             break;
           case ADDRDISPADD:   // (D16,An)
@@ -2472,6 +2475,11 @@ aggFlagC4:
                     PutIntValue((int16_t)Pipe2.w, res3.d);
                     break;
                   case SIZE_ELSE:
+#ifdef MC68010
+                    if(!_f.SR.Supervisor) {
+                      goto doPrivilegeTrap;
+                      }
+#endif
                     PutShortValue((int16_t)Pipe2.w,_f.SR.w);
                     goto noAggFlag;
                     break;
@@ -2499,6 +2507,11 @@ aggFlagC4:
                     PutIntValue(Pipe2.d,res3.d);
                     break;
                   case SIZE_ELSE:
+#ifdef MC68010
+                    if(!_f.SR.Supervisor) {
+                      goto doPrivilegeTrap;
+                      }
+#endif
                     PutShortValue(Pipe2.d,_f.SR.w);
                     goto noAggFlag;
                     break;
@@ -2515,19 +2528,24 @@ aggFlagC4:
               case BYTE_SIZE:
                 res1.b.l = 0;
                 res2.b.l = WORKING_REG_D.b.b0 + _f.CCR.Ext;
-                WORKING_REG_D.b.b0 = res3.b.l = res1.b.l - res2.b.l;
+                res3.b.l = WORKING_REG_D.b.b0 = res1.b.l - res2.b.l;
                 break;
               case WORD_SIZE:
                 res1.w = 0;
                 res2.w = WORKING_REG_D.w.l + _f.CCR.Ext;
-                WORKING_REG_D.w.l = res3.w = res1.w - res2.w;
+                res3.w = WORKING_REG_D.w.l = res1.w - res2.w;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
                 res2.d = WORKING_REG_D.d + _f.CCR.Ext;
-                WORKING_REG_D.d = res3.d = res1.d - res2.d;
+                res3.d = WORKING_REG_D.d = res1.d - res2.d;
                 break;
 		          case SIZE_ELSE:
+#ifdef MC68010
+                    if(!_f.SR.Supervisor) {
+                      goto doPrivilegeTrap;
+                      }
+#endif
                 WORKING_REG_D.w.l = _f.SR.w;
 								goto noAggFlag;
 			          break;
@@ -2556,6 +2574,11 @@ aggFlagC4:
                 PutIntValue(WORKING_REG_A.d, res3.d);
                 break;
 		          case SIZE_ELSE:
+#ifdef MC68010
+                    if(!_f.SR.Supervisor) {
+                      goto doPrivilegeTrap;
+                      }
+#endif
                 PutShortValue(WORKING_REG_A.d, _f.SR.w);
 								goto noAggFlag;
 			          break;
@@ -2582,6 +2605,11 @@ aggFlagC4:
                 PUT32_PINC();
                 break;
 		          case SIZE_ELSE:
+#ifdef MC68010
+                    if(!_f.SR.Supervisor) {
+                      goto doPrivilegeTrap;
+                      }
+#endif
                 PutShortValue(WORKING_REG_A.d, _f.SR.w);
                 WORKING_REG_A.d+=2;
 								goto noAggFlag;
@@ -2609,6 +2637,11 @@ aggFlagC4:
                 PutIntValue(WORKING_REG_A.d, res3.d);
                 break;
 		          case SIZE_ELSE:
+#ifdef MC68010
+                    if(!_f.SR.Supervisor) {
+                      goto doPrivilegeTrap;
+                      }
+#endif
                 WORKING_REG_A.d-=2;
                 PutShortValue(WORKING_REG_A.d, _f.SR.w);
 								goto noAggFlag;
@@ -2637,6 +2670,11 @@ aggFlagC4:
                 PUT32_DISP16();
                 break;
 		          case SIZE_ELSE:
+#ifdef MC68010
+                    if(!_f.SR.Supervisor) {
+                      goto doPrivilegeTrap;
+                      }
+#endif
                 PutShortValue(DISP16(),_f.SR.w);
 								goto noAggFlag;
 			          break;
@@ -2685,6 +2723,11 @@ aggFlagC4:
 									}
                 break;
 		          case SIZE_ELSE:
+#ifdef MC68010
+                    if(!_f.SR.Supervisor) {
+                      goto doPrivilegeTrap;
+                      }
+#endif
                 if(!DISPLACEMENT_SIZE)
                   PutShortValue(DISP8S(), _f.SR.w);
                 else
@@ -3143,17 +3186,17 @@ trap_chk_6:
               case BYTE_SIZE:
                 res1.b.l = 0;
                 res2.b.l = WORKING_REG_D.b.b0;
-                WORKING_REG_D.b.b0 = res3.b.l = res1.b.l - res2.b.l;
+                res3.b.l = WORKING_REG_D.b.b0 = res1.b.l - res2.b.l;
                 break;
               case WORD_SIZE:
                 res1.w = 0;
                 res2.w = WORKING_REG_D.w.l;
-                WORKING_REG_D.w.l = res3.w = res1.w - res2.w;
+                res3.w = WORKING_REG_D.w.l = res1.w - res2.w;
                 break;
               case DWORD_SIZE:
                 res1.d = 0;
                 res2.d = WORKING_REG_D.d;
-                WORKING_REG_D.d = res3.d = res1.d - res2.d;
+                res3.d = WORKING_REG_D.d = res1.d - res2.d;
                 break;
 		          case SIZE_ELSE:
                 _f.CCR.b = WORKING_REG_D.b.b0;
@@ -3609,7 +3652,7 @@ trap_chk_6:
 				goto aggFlag;
 				break;
         
-			case 0x48:   // EXT NBCD SWAP PEA MOVEM
+			case 0x48:   // EXT NBCD SWAP PEA MOVEM (bkpt)
         switch((Pipe1.b[0] & 0xf8)) {
           case 0x00:    // NBCD   VERIFICARE!!! finire
           case 0x08:
@@ -3693,10 +3736,10 @@ trap_chk_6:
                 break;
               case ADDRPINCADD:   // (An)+
                 PutValue(DEST_REG_A.d,res3.b.l);
-                DEST_REG_A.d += (Pipe1.b[1] & 0xe) == 0xe ? 2 : 1;
+                DEST_REG_A.d += ((Pipe1.b[1] & 0xe) == 0xe) ? 2 : 1;
                 break;
               case ADDRPDECADD:   // -(An)
-                DEST_REG_A.d -= (Pipe1.b[1] & 0xe) == 0xe ? 2 : 1;
+                DEST_REG_A.d -= ((Pipe1.b[1] & 0xe) == 0xe) ? 2 : 1;
                 PutValue(DEST_REG_A.d,res3.b.l);
                 break;
               case ADDRDISPADD:   // (D16,An)
@@ -3770,7 +3813,11 @@ trap_chk_6:
                   }
                 break;
               case DATAREGADD:   // Dn 
-              case ADDRREGADD:   // An        // qua no!
+                break;
+              case ADDRREGADD:   // An        // qua no! opp BKPT
+#ifdef MC68010
+												    // BKPT ANCHE altri finire
+#endif
                 break;
               case ADDRADD:   // (An)
                 res3.d = WORKING_REG_A.d; //
@@ -4277,11 +4324,11 @@ doTrap:
             FC=0b110;
             _fsup=_f;
             if(!_f.SR.Supervisor)
-              a7U=regsA.r[7].d;
+              a7U=regsA[7].d;
             else
-              a7S=regsA.r[7].d;
+              a7S=regsA[7].d;
             _f.SR.Supervisor=1;
-            regsA.r[7].d=a7S;
+            regsA[7].d=a7S;
             _sp-=4;
             PutIntValue(_sp,_pc); // low word prima
             _sp-=2;
@@ -4531,7 +4578,7 @@ doTrap:
                   res3.b.l=0x00;
                 break;
               case 0xe:						// Sgt
-                if((_f.CCR.Sign & _f.CCR.Ovf & !_f.CCR.Zero) || !(_f.CCR.Sign | _f.CCR.Ovf | _f.CCR.Zero))     // greater than
+                if((_f.CCR.Sign & _f.CCR.Ovf & ~_f.CCR.Zero) || !(_f.CCR.Sign | _f.CCR.Ovf | _f.CCR.Zero))     // greater than
                   res3.b.l=0xff;
                 else
                   res3.b.l=0x00;
@@ -4813,7 +4860,7 @@ doDBccScc:
                 res3.b.l=0;    // 
                 break;
               case 0x3:			// Ble
-                if(_f.CCR.Zero || (_f.CCR.Sign ^ _f.CCR.Ovf))     // lower or equal
+                if(_f.CCR.Sign | _f.CCR.Zero)     // lower or equal
                   res3.b.l=0xff;
                 else
                   res3.b.l=0x00;
@@ -4849,7 +4896,7 @@ doDBccScc:
                   res3.b.l=0x00;
                 break;
               case 0xf:			// Sle
-                if(_f.CCR.Zero || (_f.CCR.Sign ^ _f.CCR.Ovf))     // less or equal
+                if(_f.CCR.Zero | (_f.CCR.Sign ^ _f.CCR.Ovf))     // less or equal
                   res3.b.l=0xff;
                 else
                   res3.b.l=0x00;
@@ -5064,7 +5111,18 @@ doDBccScc:
 			case 0x60:   // BRA
 do_bra:
         if(Pipe1.b[0])
+#ifdef MC68020
+        if(Pipe1.b[0] == 0xff) {
+//					If the 8-bit displacement field in the instruction word is all ones ($FF), the 32-bit displacement
+// (long word immediately following the instruction) is used.
+          _pc+=(int32_t)Pipe2.d;
+					}
+				else {
+#endif
           _pc+=(signed char)Pipe1.b[0];
+#ifdef MC68020
+					}
+#endif
         else
           _pc+=(int16_t)Pipe2.w;
 				break;
@@ -5072,8 +5130,20 @@ do_bra:
 			case 0x61:   // BSR
         _sp-=4;
         if(Pipe1.b[0]) {
+#ifdef MC68020
+        if(Pipe1.b[0] == 0xff) {
+//					If the 8-bit displacement field in the instruction word is all ones ($FF), the 32-bit displacement
+// (long word immediately following the instruction) is used.
+          PutIntValue(_sp,_pc+4);  // 
+          _pc+=(int32_t)Pipe2.d;
+					}
+				else {
+#endif
           PutIntValue(_sp,_pc);  // low word prima
           _pc+=(signed char)Pipe1.b[0];
+#ifdef MC68020
+					}
+#endif
           }
         else {
           PutIntValue(_sp,_pc+2);  // low word prima
@@ -5089,7 +5159,7 @@ do_bra:
             _pc+=2;
 				break;
 			case 0x63:
-        if(_f.CCR.Zero || (_f.CCR.Sign ^ _f.CCR.Ovf))     // lower or equal
+        if(_f.CCR.Sign | _f.CCR.Zero)     // lower or equal
           goto do_bra;
         else
           if(!Pipe1.b[0])
@@ -5166,14 +5236,14 @@ do_bra:
             _pc+=2;
 				break;
 			case 0x6e:		// Bgt
-        if((_f.CCR.Sign & _f.CCR.Ovf & !_f.CCR.Zero) || !(_f.CCR.Sign | _f.CCR.Ovf | _f.CCR.Zero))     // greater than
+        if((_f.CCR.Sign & _f.CCR.Ovf & ~_f.CCR.Zero) || !(_f.CCR.Sign | _f.CCR.Ovf | _f.CCR.Zero))     // greater than
           goto do_bra;
         else
           if(!Pipe1.b[0])
             _pc+=2;
 				break;
 			case 0x6f:    // Ble
-        if(_f.CCR.Zero || (_f.CCR.Sign ^ _f.CCR.Ovf))     // less or equal
+        if(_f.CCR.Zero | (_f.CCR.Sign ^ _f.CCR.Ovf))     // less or equal
           goto do_bra;
         else
           if(!Pipe1.b[0])
@@ -5270,16 +5340,19 @@ do_bra:
             }
           if(Pipe1.b[1] & 0b00000001) {		// DIVS
   					res3.d = (int32_t)res1.d / (int16_t)res2.w;
-  					DEST_REG_D.d = MAKELONG(res3.w, (int32_t)res1.d % (int16_t)res2.w);
+		        _f.CCR.Ovf=!!(HIWORD(res3.d));
+						// If overflow is detected during division, the operands are unaffected  (in which case the Z- and N-bits are undefined)
+						if(!_f.CCR.Ovf)
+  						DEST_REG_D.d = MAKELONG(res3.w, (int32_t)res1.d % (int16_t)res2.w);
 						}
 					else {		// DIVU
   					res3.d = res1.d / res2.w;
-  					DEST_REG_D.d = MAKELONG(res3.w, res1.d % res2.w);
+						if(!_f.CCR.Ovf)
+	  					DEST_REG_D.d = MAKELONG(res3.w, res1.d % res2.w);
             }
           _f.CCR.Zero=!res3.w;
           _f.CCR.Sign=!!(res3.w & 0x8000);
           _f.CCR.Carry=0;
-          _f.CCR.Ovf=!!(HIWORD(res3.d));
 					}
         else {      // SBCD OR 
           if(DIRECTION) { // 
@@ -5667,39 +5740,7 @@ do_bra:
                       }
                     break;
                   case PCIDXSUBADD:   // (D16,PC) NON dovrebbero esserci..
-                    switch(OPERAND_SIZE) {
-                      case BYTE_SIZE:
-                        PutValue(DISPPC16(),res1.b.l);
-                        break;
-                      case WORD_SIZE:
-                        PutShortValue(DISPPC16(),res1.w);
-                        break;
-                      case DWORD_SIZE:
-                        PutIntValue(DISPPC16(),res1.d);
-                        break;
-                      }
-                    break;
                   case PCDISPSUBADD:   // (D8,Xn,PC) NON dovrebbero esserci..
-                    switch(OPERAND_SIZE) {
-                      case BYTE_SIZE:
-                        if(!DISPLACEMENT_SIZE)
-                          PUT8_DISPPC8S();
-                        else
-                          PUT8_DISPPC8L();
-                        break;
-                      case WORD_SIZE:
-                        if(!DISPLACEMENT_SIZE)
-                          PUT16_DISPPC8S();
-                        else
-                          PUT16_DISPPC8L();
-                        break;
-                      case DWORD_SIZE:
-                        if(!DISPLACEMENT_SIZE)
-                          PUT32_DISPPC8S();
-                        else
-                          PUT32_DISPPC8S();
-                        break;
-                      }
                     break;
                   case IMMSUBADD:   // qua no!
                     break;
@@ -5952,7 +5993,7 @@ do_bra:
           // no flag qua
           }
         else {    // SUB SUBX
-          if(DIRECTION) { // da Dn a <ea>
+          if(DIRECTION) {		// <ea> - Dn -> <ea>
             switch(ADDRESSING) {
               case ABSOLUTEADD:    // 
                 switch(ABSOLUTEADD_MODE) {
@@ -6044,22 +6085,22 @@ do_bra:
                   case BYTE_SIZE:
                     res2.b.l = WORKING_REG_D.b.b0 + _f.CCR.Ext;
                     res1.b.l = DEST_REG_D.b.b0;
-                    DEST_REG_D.b.b0= res3.b.l = res1.b.l - res2.b.l;
+                    res3.b.l = DEST_REG_D.b.b0 = res1.b.l - res2.b.l;
                     break;
                   case WORD_SIZE:
                     res2.w = WORKING_REG_D.w.l + _f.CCR.Ext;
                     res1.w = DEST_REG_D.w.l;
-                    DEST_REG_D.w.l= res3.w = res1.w - res2.w;
+                    res3.w = DEST_REG_D.w.l = res1.w - res2.w;
                     break;
                   case DWORD_SIZE:
                     res2.d = WORKING_REG_D.d + _f.CCR.Ext;
                     res1.d = DEST_REG_D.d; 
-                    DEST_REG_D.d= res3.d = res1.d - res2.d;
+                    res3.d = DEST_REG_D.d = res1.d - res2.d;
                     break;
                   }
                 goto aggFlagSX;
                 break;
-              case ADDRREGADD:   // An qua SUBX -(An) ecc
+              case ADDRREGADD:   // An qua SUBX -(An) 
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     --WORKING_REG_A.d; res2.b.l = GetValue(WORKING_REG_A.d) + _f.CCR.Ext;
@@ -6162,7 +6203,7 @@ do_bra:
                 break;
               }
             }
-          else {
+          else {			// Dn - <ea> -> Dn
             switch(OPERAND_SIZE) {
               case BYTE_SIZE:
                 res1.b.l = DEST_REG_D.b.b0;
@@ -6421,39 +6462,7 @@ do_bra:
                       }
                     break;
                   case PCIDXSUBADD:   // (D16,PC) NON dovrebbero esserci..
-                    switch(OPERAND_SIZE) {
-                      case BYTE_SIZE:
-                        PUT8_DISPPC16();
-                        break;
-                      case WORD_SIZE:
-                        PUT16_DISPPC16();
-                        break;
-                      case DWORD_SIZE:
-                        PUT32_DISPPC16();
-                        break;
-                      }
-                    break;
                   case PCDISPSUBADD:   // (D8,Xn,PC) NON dovrebbero esserci..
-                    switch(OPERAND_SIZE) {
-                      case BYTE_SIZE:
-                        if(!DISPLACEMENT_SIZE)
-                          PUT8_DISPPC8S();
-                        else
-                          PUT8_DISPPC8L();
-                        break;
-                      case WORD_SIZE:
-                        if(!DISPLACEMENT_SIZE)
-                          PUT16_DISPPC8S();
-                        else
-                          PUT16_DISPPC8L();
-                        break;
-                      case DWORD_SIZE:
-                        if(!DISPLACEMENT_SIZE)
-                          PUT32_DISPPC8S();
-                        else
-                          PUT32_DISPPC8L();
-                        break;
-                      }
                     break;
                   case IMMSUBADD:		// boh
                     break;
@@ -8584,13 +8593,7 @@ aggFlagRZ:
                   PutShortValue(Pipe2.d,res3.w); 
                   break;
                 case PCIDXSUBADD:   // (D16,PC) NON dovrebbero esserci..
-                  PUT16_DISPPC16();
-                  break;
                 case PCDISPSUBADD:   // (D8,Xn,PC) NON dovrebbero esserci..
-                  if(!DISPLACEMENT_SIZE)
-                    PUT16_DISPPC8S();
-                  else
-                    PUT16_DISPPC8L();
                   break;
                 case IMMSUBADD:   // qua no!
                   break;
