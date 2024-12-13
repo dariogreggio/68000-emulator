@@ -71,7 +71,7 @@ enum ADDRESSING_MODES {
   PCIDXADD   = 0b00111000,
   ABSOLUTEADD =0b00111000,
   IMMEDIATEADD=0b00111000,
-  ABSSSUBADD  =0b000,    // è al posto di Register
+  ABSSSUBADD  =0b000,    // Ã¨ al posto di Register
   ABSLSUBADD  =0b001,    // 
   PCIDXSUBADD =0b010,    // in 68020 ci sono dei modi aggiuntivi, con questi stessi "tipi" e non si capisce come si distinguano...
 #ifdef MC68020
@@ -238,7 +238,7 @@ int Emulate(int mode) {
 //  union D_REGISTERS regsD;
  	union REG ALL_REGS[16];
   union REG *regsD=&ALL_REGS[0];
-	union REG *regsA=&ALL_REGS[8];   // con ottimizzazioni vengono invertiti... £$%@#
+	union REG *regsA=&ALL_REGS[8];   // con ottimizzazioni vengono invertiti... Â£$%@#
 //	DWORD _sp=0;
 #define _sp regsA[7].d    // A7 == SP, dice; gestisco 2 distinti a7, che swappo quando SR.Supervisor cambia
   DWORD a7S,a7U;
@@ -271,7 +271,7 @@ int Emulate(int mode) {
 #ifdef QL
       UpdateScreen(VICRaster,VICRaster+8);      //15mS 4/1/23 e dura 0.8mS
       VICRaster+=8;     // 
-        if(1 /*dov'è?? */)      // VELOCIZZO! altrimenti sballa i tempi (dovrebbe essere 50Hz/20mS)
+        if(1 /*dov'Ã¨?? */)      // VELOCIZZO! altrimenti sballa i tempi (dovrebbe essere 50Hz/20mS)
           VIDIRQ=1;
       if(VICRaster>=256) {
         VICRaster=0;
@@ -339,7 +339,7 @@ int Emulate(int mode) {
 			_sp=GetIntValue(0x00000000);   // bah per sicurezza li imposto entrambi :D NO!
       a7S=_sp;
 			DoReset=DoStop=DoHalt=0;
-      ActivateReset=128;    // così facciamo tutto :)
+      ActivateReset=128;    // cosÃ¬ facciamo tutto :)
 			}
 		if(IPL > _f.SR.IRQMask || IPL==7) {     // https://www.cs.mcgill.ca/~cs573/fall2002/notes/lec273/lecture21/21_2.htm
       // PERO' dice anche che 7 NON PUO' essere ignorato...
@@ -349,7 +349,7 @@ int Emulate(int mode) {
         a7U=regsA[7].d;
       else
         a7S=regsA[7].d;
-      _f.SR.Supervisor=1;     // non mi è chiaro se sono nested o no...
+      _f.SR.Supervisor=1;     // non mi Ã¨ chiaro se sono nested o no...
       regsA[7].d=a7S;
       _f.SR.Trace=0;   // supervisor, area programma VERIFICARE solo >68020?
 #ifdef MC68020
@@ -366,10 +366,10 @@ int Emulate(int mode) {
 /* 	(a) Supply a vector number.
 ? Place 8-bit vector number of D 7 -D 0 .
 ? pull DTACK low.
-? µP will read D 7 -D 0 .
+? ÂµP will read D 7 -D 0 .
 (b) Request an ?auto-vector".
 ? Pull VPA low. Leave DTACK high.
-? µP generates its own vector based on interrupt level first supplied to IPL inputs.
+? ÂµP generates its own vector based on interrupt level first supplied to IPL inputs.
 ? autovectors point to locations $064 through $07F in vector table
 ? Autovectors should be used whenever 7 or less interrupt types are needed*/
       _pc=GetIntValue(/* 24*4 */ 0x00000060+IPL*4);   // ovviamente facciam b ;)
@@ -415,7 +415,7 @@ int Emulate(int mode) {
       PutIntValue(_sp,AddressExcep.addr); // 
       _sp-=2;
       PutIntValue(_sp,AddressExcep.descr.w);
-      // nello stack vanno messi (sempre dal basso verso l'alto); altri excep sono diverse (e 68020 dipiù)
+      // nello stack vanno messi (sempre dal basso verso l'alto); altri excep sono diverse (e 68020 dipiÃ¹)
       //15  5  4    3    2  0
 //            R/W  I/N  FUNCTION CODE 
       // ACCESS ADDRESS HIGH 
@@ -453,7 +453,7 @@ int Emulate(int mode) {
   */    
     
     
-      if(!SW1) {        // test tastiera, v.semaforo di là
+      if(!SW1) {        // test tastiera, v.semaforo di lÃ 
        // continue;
         __delay_ms(100); ClrWdt();
         DoReset=1;
@@ -793,7 +793,7 @@ doBit:
                     res1.b.l = GET8_DISPPC8L();
                   _pc+=2;
                   break;
-                case IMMSUBADD:			// mah.. pare di sì... ma solo con numero bit statico
+                case IMMSUBADD:			// mah.. pare di sÃ¬... ma solo con numero bit statico
                   res1.b.l = Pipe2.b.l;
                   _pc+=2;
                   break;
@@ -3080,7 +3080,7 @@ aggFlagSX:
 								break;
 							}
 						_f.CCR.Sign=!!(DEST_REG_D.w.l & 0x8000);
-						//N — Set if Dn < 0; cleared if Dn > effective address operand; undefined otherwise.
+						//N Â— Set if Dn < 0; cleared if Dn > effective address operand; undefined otherwise.
             if(((int16_t)DEST_REG_D.w.l) < 0 || DEST_REG_D.w.l > ((int16_t)res3.w))
               //trap #6
 trap_chk_6:
@@ -5424,7 +5424,7 @@ do_bra:
                       }
                     _pc+=2;
                     break;
-                  case IMMSUBADD:   // NON dovrebbe esistere qua perché confluisce in ORI, ma...
+                  case IMMSUBADD:   // NON dovrebbe esistere qua perchÃ© confluisce in ORI, ma...
                     res1.d = Pipe2.d; 
                     _pc+=4;
                     break;
@@ -5603,7 +5603,7 @@ do_bra:
                   }
                 break;
               case DATAREGADD:   // Dn .. in un punto il Doc dice questo no qua...
-                // bah cmq è ok .. 2/1/23  #warning MA VA IN CONFLITTO CON SBCD! v. anche sopra
+                // bah cmq Ã¨ ok .. 2/1/23  #warning MA VA IN CONFLITTO CON SBCD! v. anche sopra
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     res2.b.l = WORKING_REG_D.b.b0;
@@ -6765,7 +6765,7 @@ do_bra:
                   res2.b.l = GetValue(WORKING_REG_A.d);
                   res1.b.l = GetValue(DEST_REG_A.d);
                   res3.w = res1.b.l - res2.b.l;
-                  DEST_REG_A.d++; WORKING_REG_A.d++;			// qua pare NON c'è il caso particolare A7!
+                  DEST_REG_A.d++; WORKING_REG_A.d++;			// qua pare NON c'Ã¨ il caso particolare A7!
                   break;
                 case WORD_SIZE:
                   res2.w = GetShortValue(WORKING_REG_A.d);
@@ -7119,7 +7119,7 @@ do_bra:
 			case 0xcf:
         if(OPERAND_SIZE == SIZE_ELSE) {    // MULU MULS
 #ifdef MC68020
-// "forse" in 68020 ecc c'è anche una versione 32x32bit... (per cui qua non c'è OVF ma là forse sì..
+// "forse" in 68020 ecc c'Ã¨ anche una versione 32x32bit... (per cui qua non c'Ã¨ OVF ma lÃ  forse sÃ¬..
 #endif
           res1.w=DEST_REG_D.w.l;
           switch(ADDRESSING) {
@@ -7463,7 +7463,7 @@ do_bra:
                   }
                 break;
               case DATAREGADD:   // Dn .. in un punto il Doc dice questo no qua...
-              // bah cmq è ok come AND.. 2/1/23  #warning MA VA IN CONFLITTO CON ABCD! v. anche sopra
+              // bah cmq Ã¨ ok come AND.. 2/1/23  #warning MA VA IN CONFLITTO CON ABCD! v. anche sopra
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     res2.b.l = WORKING_REG_D.b.b0;
@@ -8510,7 +8510,7 @@ aggFlagAX:
                   _f.CCR.Ext=_f.CCR.Carry=!!(res3.w & 0x8000);
                   res3.w <<= 1;
                   if(_f.CCR.Carry && !(res3.w & 0x8000))
-                    _f.CCR.Ovf=1;   // SOLO ASL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
+                    _f.CCR.Ovf=1;   // SOLO ASL Ã¨ diversa! il doc breve non lo menziona @#Â£$% ma il simulatore pare confermare cosÃ¬..
                   //ASL, Arithmetic shift left, sets the V flag if the MSB changes sign at any time during the shift.
                   }
                 else {
@@ -8643,7 +8643,7 @@ aggFlagRZ:
                       res3.b.l <<= 1;
                       _f.CCR.Ext=_f.CCR.Carry=!!(res3.b.l & 0x80);
                       if(_f.CCR.Carry && !(res3.b.l & 0x80))
-                        _f.CCR.Ovf=1;   // SOLO ASL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
+                        _f.CCR.Ovf=1;   // SOLO ASL Ã¨ diversa! il doc breve non lo menziona @#Â£$% ma il simulatore pare confermare cosÃ¬..
                       //ASL, Arithmetic shift left, sets the V flag if the MSB changes sign at any time during the shift.
                       }
                     else {
@@ -8728,7 +8728,7 @@ aggFlagRZ1:
                       _f.CCR.Ext=_f.CCR.Carry=!!(res3.w & 0x8000);
                       res3.w <<= 1;
                       if(_f.CCR.Carry && !(res3.w & 0x8000))
-                        _f.CCR.Ovf=1;   // SOLO ASL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
+                        _f.CCR.Ovf=1;   // SOLO ASL Ã¨ diversa! il doc breve non lo menziona @#Â£$% ma il simulatore pare confermare cosÃ¬..
                       //ASL, Arithmetic shift left, sets the V flag if the MSB changes sign at any time during the shift.
                       }
                     else {
@@ -8813,7 +8813,7 @@ aggFlagRZ2:
                       _f.CCR.Ext=_f.CCR.Carry=!!(res3.d & 0x80000000);
                       res3.d <<= 1;
                       if(_f.CCR.Carry && !(res3.d & 0x80000000))
-                        _f.CCR.Ovf=1;   // SOLO ASL è diversa! il doc breve non lo menziona @#£$% ma il simulatore pare confermare così..
+                        _f.CCR.Ovf=1;   // SOLO ASL Ã¨ diversa! il doc breve non lo menziona @#Â£$% ma il simulatore pare confermare cosÃ¬..
                       //ASL, Arithmetic shift left, sets the V flag if the MSB changes sign at any time during the shift.
                       }
                     else {
