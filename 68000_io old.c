@@ -80,7 +80,7 @@ BYTE IRQenable=0;
 #define IO_BASE_ADDRESS 0x7c000
 #define LCD_BOARD_ADDRESS 0x7c100
 // emulo display LCD testo (4x20, 4x20 o altro) come su scheda Z80:
-//  all'indirizzo+0 c'è la porta comandi (fili C/D, RW e E (E2)), a indirizzo+1 la porta dati (in/out)
+//  all'indirizzo+0 c'Ã¨ la porta comandi (fili C/D, RW e E (E2)), a indirizzo+1 la porta dati (in/out)
 #define IO_BOARD_ADDRESS 0x0
 #endif
 
@@ -115,7 +115,7 @@ BYTE GetValue(DWORD t) {
 //				IPCCnt++;
         
         break;
-        // 0x0d è IPC per seriale_baud_rate, 0x01 è report input status, 6=read ser1, 7=read ser2, 8=read keyboard
+        // 0x0d Ã¨ IPC per seriale_baud_rate, 0x01 Ã¨ report input status, 6=read ser1, 7=read ser2, 8=read keyboard
 
       case 0x20:        //   microdrive/RS232 link status
 //        i=IPCR;
@@ -124,13 +124,13 @@ BYTE GetValue(DWORD t) {
         i=0b01000000 | (IPCData & 0b10000000);      // finto handshake :) in effeti servirebbe SOLO dopo una write
         // la lettura non aspetta (giustamente)
         
-        i=0b00000000 | (IPCData & 0b10000000);      // handshake b6=0; b7 è il dato, 
+        i=0b00000000 | (IPCData & 0b10000000);      // handshake b6=0; b7 Ã¨ il dato, 
 
 				//ne legge 4 o 8 (dopo aver scritto in 18003) di seguito e accumula (MSB first)
         break;
 
       case 0x21:        //   interrupt/IPC link status
-//    B 	M 	R 	X 	F 	T 	 I  	G 	 B=Baud state, M=Microdrive inactive, R=Rtc state, X=eXternal Interrupt, F=Frame vsync, T=Transmit interrupt, I=IPC Interface interrupt G=Gap interrupt (microdrive)
+//    B 	M 	R 	X 	F 	T 	Â I  	G 	Â B=Baud state, M=Microdrive inactive, R=Rtc state, X=eXternal Interrupt, F=Frame vsync, T=Transmit interrupt, I=IPC Interface interruptÂ G=Gap interrupt (microdrive)
         i=VIDIRQ ? 0b00001000 : 0; 
         i |= KBDIRQ ? 0b00000010 : 0; 
 //        i |= SERIRQ ? 0b00000100 : 0; 
@@ -167,7 +167,7 @@ $18000  Real-time clock byte 0  Real-time clock reset*/
 #elif MICHELEFABBRI
   
   else if(t==IO_BASE_ADDRESS) {        //   led
-    i=LedPort[0];      // OCCHIO nel suo hw non c'è! io lo metto per test lettura/rotate
+    i=LedPort[0];      // OCCHIO nel suo hw non c'Ã¨! io lo metto per test lettura/rotate
     }
   else if(t==LCD_BOARD_ADDRESS) {        //   lcd
     i=LCDPortR[0];
@@ -193,8 +193,8 @@ $18000  Real-time clock byte 0  Real-time clock reset*/
   //      break;
 
       case LCD_BOARD_ADDRESS:
-        // per motivi che ora non ricordo, il BIOS indirizza 0..3 mentre la 2°EEprom (casanet) aveva indirizzi doppi o meglio bit 0..1 messi a 2-0
-        // potrei ricompilare casanet per andare "dritto" 0..3, per ora lascio così (unico problema è conflitto a +6 con la tastiera... amen! tanto scrive solo all'inizio)
+        // per motivi che ora non ricordo, il BIOS indirizza 0..3 mentre la 2Â°EEprom (casanet) aveva indirizzi doppi o meglio bit 0..1 messi a 2-0
+        // potrei ricompilare casanet per andare "dritto" 0..3, per ora lascio cosÃ¬ (unico problema Ã¨ conflitto a +6 con la tastiera... amen! tanto scrive solo all'inizio)
         // if(i8255RegR[2] & 0b01000000) fare...?
         // else 			i=i8255RegW[0];
         if(!(i8255RegR[1] & 1))			// se status...
@@ -224,11 +224,11 @@ $18000  Real-time clock byte 0  Real-time clock reset*/
         i=i8255RegR[1];
         break;
       case LCD_BOARD_ADDRESS+4:
-        // qua c'è la 3° porta del 8255
+        // qua c'Ã¨ la 3Â° porta del 8255
         // il b6 mette a in o out la porta dati A (1=input)
         i=i8255RegR[2];
         break;
-      case LCD_BOARD_ADDRESS+5 /* sarebbe 6 ma ovviamente non si può! v. sopra*/:
+      case LCD_BOARD_ADDRESS+5 /* sarebbe 6 ma ovviamente non si puÃ²! v. sopra*/:
         // 8255 settings
         i=i8255RegR[3];
         break;
@@ -289,14 +289,14 @@ $18000  Real-time clock byte 0  Real-time clock reset*/
           case 0:
             i146818RegR[1]=currentTime.sec;
             break;
-            // in mezzo c'è Alarm...
+            // in mezzo c'Ã¨ Alarm...
           case 2:
             i146818RegR[1]=currentTime.min;
             break;
           case 4:
             i146818RegR[1]=currentTime.hour;
             break;
-            // 6 è day of week...
+            // 6 Ã¨ day of week...
           case 7:
             i146818RegR[1]=currentDate.mday;
             break;
@@ -441,7 +441,7 @@ SWORD GetPipe(DWORD t) {
 	if(t < ROM_SIZE-3) {			// 
     if(!(t & 3))
       ;
-#warning se indirizzo è long aligned, si potrebbero leggere 2 SWORD in un colpo solo VERIFICARE test e velocità
+#warning se indirizzo Ã¨ long aligned, si potrebbero leggere 2 SWORD in un colpo solo VERIFICARE test e velocitÃ 
 		Pipe1.b[0]=rom_seg[t+1];
     Pipe1.b[1]=rom_seg[t];
 		Pipe2.bd[0]=rom_seg[t+5];
@@ -470,7 +470,7 @@ SWORD GetPipe(DWORD t) {
 	return Pipe1.w;
 	}
 
-BYTE AdvPipe(DWORD t,BYTE n) {    // questa va usata quando il primo parm dell'istruzione è esplicito! NON per ils econdo (verificare)
+BYTE AdvPipe(DWORD t,BYTE n) {    // questa va usata quando il primo parm dell'istruzione Ã¨ esplicito! NON per ils econdo (verificare)
   
   if(t & 1) {
     AddressExcep.active=1;
@@ -502,7 +502,7 @@ BYTE AdvPipe(DWORD t,BYTE n) {    // questa va usata quando il primo parm dell'i
       if(t < ROM_SIZE-7) {			// 
         if(!(t & 3))
           ;
-    #warning se indirizzo è long aligned, si potrebbero leggere 2 SWORD in un colpo solo VERIFICARE test e velocità
+    #warning se indirizzo Ã¨ long aligned, si potrebbero leggere 2 SWORD in un colpo solo VERIFICARE test e velocitÃ 
         Pipe2.bd[0]=rom_seg[t+7];
         Pipe2.bd[1]=rom_seg[t+6];
         Pipe2.bd[2]=rom_seg[t+5];
@@ -530,7 +530,7 @@ BYTE AdvPipe(DWORD t,BYTE n) {    // questa va usata quando il primo parm dell'i
 
 #if 0
 DWORD GetPipeExt(DWORD t) {
-// NON è sempre 6 byte dopo! ma uso cmq le word aggiuntive di Pipe2, e restituisco...
+// NON Ã¨ sempre 6 byte dopo! ma uso cmq le word aggiuntive di Pipe2, e restituisco...
   // diciamo che la uso sempre dopo il +2 iniziale, quindi mi posto a ulteriori +4 e leggo
   if(t & 1) {
     DoAddressExcep=1;
@@ -539,7 +539,7 @@ DWORD GetPipeExt(DWORD t) {
 	if(t < ROM_SIZE) {			// 
     if(!(t & 3))
       ;
-#warning se indirizzo è long aligned, si potrebbero leggere 2 SWORD in un colpo solo VERIFICARE test e velocità
+#warning se indirizzo Ã¨ long aligned, si potrebbero leggere 2 SWORD in un colpo solo VERIFICARE test e velocitÃ 
     t+=4;
 		Pipe2.wd[3]=MAKEWORD(rom_seg[t+1],rom_seg[t]);
     t+=2;
@@ -571,14 +571,14 @@ void PutValue(DWORD t,BYTE t1) {
       case 0: //   RTC SOLO LONG!
         break;
         
-      case 2:        //   Transmit control; port 2, P21 è BEEP MA FORSE a 32bit!
+      case 2:        //   Transmit control; port 2, P21 Ã¨ BEEP MA FORSE a 32bit!
         break;
         
       case 3:        //   IPC Wr
 //        IPCW=IPCR=t1;
         // (tastiera ecc va qua...)  https://www.sinclairql.net/srv/qlsm1.html#s1-p4
         // (no! scrive 0x0c per video irq frame)
-        // 0x0d è IPC per seriale_baud_rate, 0x01 è report input status, 6=read ser1, 7=read ser2, 8=read keyboard
+        // 0x0d Ã¨ IPC per seriale_baud_rate, 0x01 Ã¨ report input status, 6=read ser1, 7=read ser2, 8=read keyboard
         // scrive 4 o 8 bit, data 1=$0E or 0=$0C
         if(t1==1) {      // boh lo fa al boot.. io ripristino
           IPCW=255; IPCR=IPCData=0; IPCCnt=4; IPCState=0;
@@ -594,9 +594,9 @@ void PutValue(DWORD t,BYTE t1) {
                 IPCData |= t1 & 2 ? (1 << IPCCnt) : 0;
         //				IPCW <<= 1;
         //				IPCW |= t1 & 2 ? 1 : 0;
-                IPCData &= 0xf; //patch perché ho IPCdata in canna da prima...
+                IPCData &= 0xf; //patch perchÃ© ho IPCdata in canna da prima...
                 if(!IPCCnt) {
-                  switch(IPCData) {  // if(!IPCCnt MA LO SHIFT è IN READ...
+                  switch(IPCData) {  // if(!IPCCnt MA LO SHIFT Ã¨ IN READ...
                     case 0x01:
                       IPCW=0x01;      // read status
                       IPCData=0x01;       // b6=microdrive write protect, b1=sound, b0=keyboard, b4=seriale1, b5=seriale2
@@ -631,7 +631,7 @@ void PutValue(DWORD t,BYTE t1) {
                       IPCState=0;
                       break;
                     }
-                  IPCData = (IPCData >> 1) | (IPCData & 0x1 ? 0x80 : 0);  // ROTate perché sono avanti di 1 (v.sopra)
+                  IPCData = (IPCData >> 1) | (IPCData & 0x1 ? 0x80 : 0);  // ROTate perchÃ© sono avanti di 1 (v.sopra)
                   }
                 }
               break;
@@ -641,7 +641,7 @@ void PutValue(DWORD t,BYTE t1) {
                 IPCCnt--;
                 IPCData |= t1 & 2 ? (1 << IPCCnt) : 0;
                 if(!IPCCnt) {
-                  // usare il valore... gestire                  IPCData &= 0xf; //patch perché ho IPCdata in canna da prima...
+                  // usare il valore... gestire                  IPCData &= 0xf; //patch perchÃ© ho IPCdata in canna da prima...
                   IPCW=255; IPCCnt=4;
                   }
                 }
@@ -673,10 +673,10 @@ void PutValue(DWORD t,BYTE t1) {
                     default /*255*/:      // qua ci passiamo anche quando scrive (primo giro) per creare IPCW..
                       break;
                     }
-//                  IPCData = (IPCData >> 1) | (IPCData & 0x1 ? 0x80 : 0);  // ROTate perché sono avanti di 1 (v.sopra)
+//                  IPCData = (IPCData >> 1) | (IPCData & 0x1 ? 0x80 : 0);  // ROTate perchÃ© sono avanti di 1 (v.sopra)
                   }
                 else {
-                  IPCData = (IPCData << 1) | (IPCData & 0x80 ? 1 : 0);  // ROTate perché sono avanti di 1 (v.sopra)
+                  IPCData = (IPCData << 1) | (IPCData & 0x80 ? 1 : 0);  // ROTate perchÃ© sono avanti di 1 (v.sopra)
                   switch(IPCW) {
                     case 0x01:      // read status
                       IPCCnt--;
@@ -779,8 +779,8 @@ void PutValue(DWORD t,BYTE t1) {
         break;
 
       case 0x21:        //   interrupt/IPC link status
-//  R 	F 	M 	X 	F 	T 	I  	G 	 R=tRansmit mask, F=interFace mask, M=gap Mask,
-        //X=reset eXternal Interrupt,F=reset Frame vsync, T=reset Transmit interrupt, I=reset IPC Interface interrupt G=reset Gap interrupt 
+//  R 	F 	M 	X 	F 	T 	I  	G 	Â R=tRansmit mask, F=interFace mask, M=gap Mask,
+        //X=reset eXternal Interrupt,F=reset Frame vsync, T=reset Transmit interrupt,Â I=reset IPC Interface interruptÂ G=reset Gap interrupt 
 //	verificare pc.intre quanto vale! scrive per pulire ;  pc.intri=2, pc.intrf=8, pc.intrt=4
         if(t1 & 0b00001000)
           VIDIRQ=0; 
@@ -888,8 +888,8 @@ void PutValue(DWORD t,BYTE t1) {
         break;
 
       case LCD_BOARD_ADDRESS:
-        // per motivi che ora non ricordo, il BIOS indirizza 0..3 mentre la 2°EEprom (casanet) aveva indirizzi doppi o meglio bit 0..1 messi a 2-0
-        // potrei ricompilare casanet per andare "dritto" 0..3, per ora lascio così (unico problema è conflitto a +6 con la tastiera... amen! tanto scrive solo all'inizio)
+        // per motivi che ora non ricordo, il BIOS indirizza 0..3 mentre la 2Â°EEprom (casanet) aveva indirizzi doppi o meglio bit 0..1 messi a 2-0
+        // potrei ricompilare casanet per andare "dritto" 0..3, per ora lascio cosÃ¬ (unico problema Ã¨ conflitto a +6 con la tastiera... amen! tanto scrive solo all'inizio)
         i8255RegW[0]=t1;
         break;
       case LCD_BOARD_ADDRESS+2:
@@ -948,11 +948,11 @@ void PutValue(DWORD t,BYTE t1) {
         i8255RegW[1]=i8255RegR[1]=t1;
         break;
       case LCD_BOARD_ADDRESS+4:
-        // qua c'è la 3° porta del 8255
+        // qua c'Ã¨ la 3Â° porta del 8255
         // il b6 mette a in o out la porta dati A (1=input)
         i8255RegW[2]=i8255RegR[2]=t1;
         break;
-      case LCD_BOARD_ADDRESS+5 /* sarebbe 6 ma ovviamente non si può! v. sopra*/:
+      case LCD_BOARD_ADDRESS+5 /* sarebbe 6 ma ovviamente non si puÃ²! v. sopra*/:
         // 8255 settings
         i8255RegW[3]=i8255RegR[3]=t1;
         break;
@@ -1007,7 +1007,7 @@ void PutValue(DWORD t,BYTE t1) {
   		}
 		}
   else if(t==0xe000) {        //
-    IOPortO=t1;      // b5 è speaker...
+    IOPortO=t1;      // b5 Ã¨ speaker...
     LATDbits.LATD1= t1 & 0b00100000 ? 1 : 0;
 //    LATEbits.LATE2= t1 & 0b10000000 ? 1 : 0;  // led, fare se si vuole
 //    LATEbits.LATE3= t1 & 0b01000000 ? 1 : 0;
@@ -1027,14 +1027,14 @@ void PutValue(DWORD t,BYTE t1) {
           case 0:
             currentTime.sec=t1;
             break;
-            // in mezzo c'è Alarm...
+            // in mezzo c'Ã¨ Alarm...
           case 2:
             currentTime.min=t1;;
             break;
           case 4:
             currentTime.hour=t1;
             break;
-          // 6 è day of week...
+          // 6 Ã¨ day of week...
           case 7:
             currentDate.mday=t1;
             break;
@@ -1147,7 +1147,7 @@ void PutIntValue(DWORD t,DWORD t1) {
         RTC.b[3]=LOBYTE(LOWORD(t1));
         break;
       case 2:        //   Transmit control; 
-        //port 2, P21 è BEEP MA FORSE a 32bit!
+        //port 2, P21 Ã¨ BEEP MA FORSE a 32bit!
         break;
       }
     }
