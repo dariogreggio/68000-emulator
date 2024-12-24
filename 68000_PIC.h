@@ -34,9 +34,12 @@
 
 #define US_TO_CT_TICKS  (CPU_CT_HZ/1000000UL)    // uS to CoreTimer Ticks
     
-#define VERNUML 5
+#define VERNUML 7
 #define VERNUMH 1
 
+#undef MC68008
+#undef MC68010
+#undef MC68020
 
 
 typedef char BOOL;
@@ -59,19 +62,41 @@ typedef DWORD COLORREF;
 #define TRUE 1
 #define FALSE 0
 
+enum __attribute__((__packed__)) {
+  DoReset=1,
+  DoIRQ=4,
+  DoWait=8,     // boh qua
+  DoHalt=16,
+  BErr=32,
+  BGACK=64,
+  DTACK=128
+  };
 
+
+#ifdef ST7735
 #define _TFTWIDTH  		160     //the REAL W resolution of the TFT
 #define _TFTHEIGHT 		128     //the REAL H resolution of the TFT
+typedef signed char GRAPH_COORD_T;
+typedef unsigned char UGRAPH_COORD_T;
+#endif
+#ifdef ILI9341
+#define _TFTWIDTH  		320     //the REAL W resolution of the TFT
+#define _TFTHEIGHT 		240     //the REAL H resolution of the TFT
+typedef signed short int GRAPH_COORD_T;
+typedef unsigned short int UGRAPH_COORD_T;
+#endif
+typedef unsigned short int GFX_COLOR;
 
 //#define SKYNET 1
 //#define QL 1          v. progetto
 #ifdef QL
 #define HORIZ_SIZE 128
 #define VERT_SIZE 256
+#elif MACINTOSH
+#define HORIZ_SIZE 512
+#define VERT_SIZE 342
 #endif
 
-typedef signed char GRAPH_COORD_T;
-typedef unsigned char UGRAPH_COORD_T;
 
 void mySYSTEMConfigPerformance(void);
 void myINTEnableSystemMultiVectoredInt(void);
@@ -124,7 +149,7 @@ union __attribute__((__packed__)) PIPE {
 	DWORD d;
 	struct __attribute__((__packed__)) {
 		WORD dummy;
-  	WORD w;     // per quando serve 1 word sola...
+        WORD w;     // per quando serve 1 word sola...
 		};
 	BYTE bd[8];
 	WORD wd[4];
@@ -140,7 +165,7 @@ union __attribute__((__packed__)) PIPE {
 		BYTE h;		 // oppure spostare la pipe quando ci sono le istruzioni lunghe 4+...
 		} b;
 	};
-  union __attribute__((__packed__)) REG {
+union __attribute__((__packed__)) REG {
     DWORD d;
     struct __attribute__((__packed__)) { 
       WORD l;
@@ -154,11 +179,9 @@ union __attribute__((__packed__)) PIPE {
       } b;
     };
 	union __attribute__((__packed__)) D_REGISTERS {
-		BYTE  b[32];
 	  union REG r[8];
 		};
 	union __attribute__((__packed__)) A_REGISTERS {   // lascio 2 def separate ev. per gestire A7/SP
-		BYTE  b[32];
 	  union REG r[8];
 		};
 #define ID_CARRY 0x1
@@ -246,9 +269,24 @@ int Emulate(int);
 
 #ifdef QL
 #define RAM_START 0x20000
+#ifdef USING_SIMULATOR
+#define RAM_SIZE 0x10000        //0x2000            // velocizzo! no non va, credo voglia blocchi da 64k
+#else
 #define RAM_SIZE 0x20000            // 128KB standard
+#endif
 #define ROM_START 0x00000
 #define ROM_SIZE 0x0c000
+//#define ROM_SIZE2 0x04000
+int UpdateScreen(SWORD,SWORD);
+#elif MACINTOSH
+#define RAM_START 0x20000
+#ifdef USING_SIMULATOR
+#define RAM_SIZE 0x2000            // velocizzo!
+#else
+#define RAM_SIZE 0x20000            // 128KB standard
+#endif
+#define ROM_START 0x00000
+#define ROM_SIZE 0x20000    //0x10000
 //#define ROM_SIZE2 0x04000
 int UpdateScreen(SWORD,SWORD);
 #elif MICHELEFABBRI
@@ -267,14 +305,15 @@ int UpdateScreen(WORD);
 #endif
 
 
+
+#ifdef ST7735           // ST7735 160x128 su Arduino 
+// pcb SDRradio 2019
 #define LED1 LATEbits.LATE2
 #define LED2 LATEbits.LATE3
 #define LED3 LATEbits.LATE4
 #define SW1  PORTDbits.RD2
 #define SW2  PORTDbits.RD3
 
-
-// pcb SDRradio 2019
 #define	SPISDITris 0		// niente qua
 #define	SPISDOTris TRISGbits.TRISG8				// SDO
 #define	SPISCKTris TRISGbits.TRISG6				// SCK
@@ -289,6 +328,36 @@ int UpdateScreen(WORD);
 #define	m_LCDDCBit  LATEbits.LATE7 		// pin 
 //#define	m_LCDRSTBit LATBbits.LATB7 //FARE
 //#define	m_LCDBLBit  LATBbits.LATB12
+#endif
+
+
+#ifdef ILI9341          // su forgetIvrea
+
+#define LED1 LATEbits.LATE4
+#define LED2 LATDbits.LATD0
+#define LED3 LATDbits.LATD11
+#define SW2  PORTFbits.RF0
+#define SW1  PORTBbits.RB0          // bah uso AREF tanto per...
+
+#define	LCDDCTris  TRISBbits.TRISB3				// http://attach01.oss-us-west-1.aliyuncs.com/IC/Datasheet/11009.zip?spm=a2g0o.detail.1000023.9.70352ae94rI9S1&file=11009.zip
+#define	LCDRSTTris TRISBbits.TRISB10
+
+#define	LCDRDTris  TRISBbits.TRISB5          // 
+#define	LCDWRTris  TRISBbits.TRISB4          // WR per LCD parallelo
+#define	LCDSTRTris  TRISBbits.TRISB4         // Strobe per LCD parallelo A3_TRIS (in pratica Write...)
+
+#define	LCDCSTris  TRISBbits.TRISB2
+
+#define	m_LCDDCBit  LATBbits.LATB3 		// 
+#define	m_LCDRSTBit LATBbits.LATB10
+//#define	m_LCDBLBit  LATBbits.LATB12
+
+#define	m_LCDRDBit  LATBbits.LATB5 		// 
+#define	m_LCDWRBit  LATBbits.LATB4 		// per LCD parallelo ILI
+#define	m_LCDSTRBit LATBbits.LATB4        // non è chiaro... m_A3_out; in pratica è WRITE
+
+#define	m_LCDCSBit  LATBbits.LATB2
+#endif
 
 #endif
 
