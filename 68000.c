@@ -19,20 +19,23 @@
 //#include <io.h>
 #include <xc.h>
 
+#include "68000_PIC.h"
+
+#if defined(ST7735)
 #include "Adafruit_ST77xx.h"
 #include "Adafruit_ST7735.h"
+#endif
+#if defined(ILI9341)
+#include "Adafruit_ili9341.h"
+#endif
 #include "adafruit_gfx.h"
 
-#include "68000_PIC.h"
 
 
 //#pragma check_stack(off)
 // #pragma check_pointer( off )
 //#pragma intrinsic( _enable, _disable )
 
-#undef MC68008
-#undef MC68010
-#undef MC68020
 
 BYTE fExit=0;
 BYTE debug=0;
@@ -40,18 +43,22 @@ BYTE debug=0;
 //#define KBStatus KBRAM[0]   // pare...
 #ifdef QL
 BYTE Keyboard[3]={0,0,0};     // tasto, modifier, #tasti
+volatile BYTE TIMIRQ=0,VIDIRQ=0,KBDIRQ=0,SERIRQ=0,RTCIRQ=0,MDVIRQ=0;
 #elif MACINTOSH
 BYTE Keyboard[2]={0,0};     // tasto, modifier
+extern BYTE VIA1RegR[16],VIA1RegW[16],VIA1ShCnt;
+extern BYTE z8530RegR[16],z8530RegW[16];
+extern BYTE IWMRegR[4],IWMRegW[4],IWMSelect;
+volatile BYTE TIMIRQ=0,VIDIRQ=0,KBDIRQ=0,SCCIRQ=0,RTCIRQ=0,VIAIRQ=0;
 #elif MICHELEFABBRI
 #endif
-volatile BYTE TIMIRQ=0,VIDIRQ=0,KBDIRQ=0,SERIRQ=0,RTCIRQ=0,MDVIRQ=0;
-extern BYTE VIA1RegR[16],VIA1RegW[16],VIA1ShCnt;
 extern BYTE IPCW,IPCR,IPCData,IPCCnt,IPCState;
 extern SWORD VICRaster;
 
 extern volatile BYTE keysFeedPtr;
 
-BYTE DoReset=0,IPL=0,FC /*bus state*/=0,ActivateReset=0,DoStop=0,DoTrace=0,DoHalt=0;
+BYTE CPUPins=DoReset;
+BYTE IPL=0,FC /*bus state*/=0,ActivateReset=0,DoStop=0,DoTrace=0;
 struct ADDRESS_EXCEPTION AddressExcep,BusExcep /**/;
 #define MAX_WATCHDOG 100      // x30mS v. sotto
 WORD WDCnt=MAX_WATCHDOG;
@@ -249,7 +256,11 @@ int Emulate(int mode) {
 //	DWORD _sp=0;
 #define _sp regsA[7].d    // A7 == SP, dice; gestisco 2 distinti a7, che swappo quando SR.Supervisor cambia
   DWORD a7S,a7U;
-	DWORD _pc=0;
+#if !defined(MC68020)
+	uint32_t /*uint24_t non c'è...*/ _pc=0;
+#else
+	uint32_t _pc=0;
+#endif
   
 	union REGISTRO_F  _fIRQ;
 	register union REGISTRO_F _f;
@@ -257,6 +268,7 @@ int Emulate(int mode) {
 //	register SWORD i;
   register union RESULT res1,res2,res3;
   int c=0;
+  uint8_t screenDivider=0;
 
 
 	_pc=0;
@@ -267,10 +279,18 @@ int Emulate(int mode) {
 	do {
 
 		c++;
+#ifdef QL
+#ifdef USING_SIMULATOR
+#define VIDEO_DIVIDER 0x000000ff
+#else
+#define VIDEO_DIVIDER 0x00001fff
+#endif
+#elif MACINTOSH
 #ifdef USING_SIMULATOR
 #define VIDEO_DIVIDER 0x0000000f
 #else
-#define VIDEO_DIVIDER 0x00000fff
+#define VIDEO_DIVIDER 0x000000ff
+#endif
 #endif
 #if defined(QL) || defined(MACINTOSH)
 		if(!(c & VIDEO_DIVIDER)) {     //~2uS (400 istruzioni) 2/12/24 Mac => 7mS
@@ -281,19 +301,25 @@ int Emulate(int mode) {
 // yield()
 #ifdef QL
 #ifndef USING_SIMULATOR
-      UpdateScreen(VICRaster,VICRaster+8);      //15mS 4/1/23 e dura 0.8mS
+      if(!screenDivider) {
+        UpdateScreen(VICRaster,VICRaster+8);      //15mS 4/1/23 e dura 0.8mS
+        }
 #endif
       VICRaster+=8;     // 
         if(1 /*dov'è?? */)      // VELOCIZZO! altrimenti sballa i tempi (dovrebbe essere 50Hz/20mS)
           VIDIRQ=1;
       if(VICRaster>=256) {
+        screenDivider++;
+        screenDivider %= 3;
         VICRaster=0;
         }
 #elif MACINTOSH
 #ifndef USING_SIMULATOR
-      UpdateScreen(VICRaster,VICRaster+12);      //7mS 2/12/24 e dura ???mS
+      if(!screenDivider) {
+        UpdateScreen(VICRaster,VICRaster+12);      //7mS 2/12/24 e dura ???mS
+        }
 #endif
-      VICRaster+=12;     // :3 in modalità non real_size, ok
+      VICRaster+=12;     // :3 (ev x2) in modalità non real_size, ok
       if(VICRaster>=VERT_SIZE-28 /* 28 dice */)
         VIA1RegR[0] |= 0b01000000;    // il VBlank dovrebbe durare 1.26mS, dice...
       if(VICRaster>=VERT_SIZE) {
@@ -302,44 +328,52 @@ int Emulate(int mode) {
           VIDIRQ=1;
         VIA1RegR[0] &= ~0b01000000;    // VBlank 
         VICRaster=0;
+        screenDivider++;
+        screenDivider %= 4;
         }
+      // ci sarebbe da togglare H (V)Blank a ogni riga cmq...
 
 #else
 #ifndef USING_SIMULATOR
 			UpdateScreen(1);      // 50mS 17/11/22
 #endif
 #endif
-      LED1^=1;    // 50mS~ con fabbri 17/11/22; 15mS QL 29/12/22; passo a 7mS Macintosh 2/12/24
       
-      WDCnt--;
-      if(!WDCnt) {
-        WDCnt=MAX_WATCHDOG;
 #ifdef QL
 #elif MACINTOSH
 #elif MICHELEFABBRI
 #else
+      WDCnt--;
+      if(!WDCnt) {
+        WDCnt=MAX_WATCHDOG;
         if(IOPortO & 0b00001000) {     // WDEn
-          DoReset=1;
+          CPUPins |= DoReset;
           }
-#endif
         }
+#endif
+      
+#ifdef QL
+      LED1^=1;    // 50mS~ con fabbri 17/11/22; 15mS QL 29/12/22; passo a 7mS Macintosh 2/12/24
+#elif MACINTOSH
+extern BYTE floppyState[2];
+      if(floppyState[0] & 0x80 /*0x4*/)      // disk in! (motor on messo su display, v.
+        LED1=1;
+      else
+        LED1=0;
+#elif MICHELEFABBRI
+      LED1^=1;    // 50mS~ con fabbri 17/11/22; 15mS QL 29/12/22; passo a 7mS Macintosh 2/12/24
+#else
+      LED1^=1;    // 50mS~ con fabbri 17/11/22; 15mS QL 29/12/22; passo a 7mS Macintosh 2/12/24
+#endif
       
       }
 		if(ColdReset) {
 			ColdReset=0;
-      DoReset=1;
+      CPUPins |= DoReset;
 			continue;
       }
 
 
-    if(RTCIRQ) {      // bah non sembra esserci qua...
-      if(0 /*bah non sembra esserci qua...*/)
-        IPL=0b110;
-#if !defined(QL) && !defined(MACINTOSH)
-      LCDram[0x40+20+19]++;
-#endif
-      RTCIRQ=0;
-      }
 #if defined(QL)
     if(KBDIRQ || VIDIRQ || MDVIRQ /*|| TIMIRQ || SERIRQ || RTCIRQ*/) {
 //    if(0) {
@@ -349,15 +383,23 @@ int Emulate(int mode) {
       IPL=0;
       }
 #elif defined(MACINTOSH)
-    if(KBDIRQ || VIDIRQ || TIMIRQ || RTCIRQ) {
+    if(KBDIRQ || VIDIRQ || VIAIRQ || TIMIRQ || RTCIRQ) {
       IPL=0b001;    // tutti VIA=001
       }
-    else if(SERIRQ) {
+    else if(SCCIRQ) {
       IPL=0b010;    // SCC=010, 
       }
     // alcuni sembrano "sommati" e poi c'è "interrupt switch" che non so cosa sia.., v.
     else {
       IPL=0;
+      }
+#elif MICHELEFABBRI
+#else
+    if(RTCIRQ) {      // bah non sembra esserci qua...
+      if(0 /*bah non sembra esserci qua...*/)
+        IPL=0b110;
+      LCDram[0x40+20+19]++;
+      RTCIRQ=0;
       }
 #endif
 #ifdef QL
@@ -366,7 +408,7 @@ int Emulate(int mode) {
       if(!MAKEWORD(VIA1RegR[4],VIA1RegR[5])) {
         if(VIA1RegW[0xe] & 0x40) {
           VIA1RegR[0xd] |= 0xc0;
-          // o altro? TIMIRQ=1;
+          VIAIRQ=1;
           }
         if(VIA1RegR[0xb] & 0x80) {
           // toggle PB7
@@ -380,11 +422,11 @@ int Emulate(int mode) {
         VIA1RegR[4]--;
         }
       }
-    if(!(VIA1RegR[0xb] & 0x20)) {   // finire, capire..
+    if(!(VIA1RegR[0xb] & 0x20)) {   // (finire, capire..
       if(!MAKEWORD(VIA1RegR[8],VIA1RegR[9])) {
         if(VIA1RegW[0xe] & 0x20) {
           VIA1RegR[0xd] |= 0xa0;
-          // o altro? TIMIRQ=1;
+          VIAIRQ=1;
           }
         VIA1RegR[8]=VIA1RegW[8];
         VIA1RegR[9]=VIA1RegW[9];
@@ -399,41 +441,49 @@ int Emulate(int mode) {
       case 0 << 2:   // disabled
         break;
       case 1 << 2:   // shift in, usa Timer2
-    		VIA1RegR[0xa] <<= 1;
-        goto updViaShReg;
+        if(VIA1ShCnt)
+          goto doViaShRegI;
         break;
       case 2 << 2:   // shift in, usa Clock
-    		VIA1RegR[0xa] <<= 1;
-        goto updViaShReg;
+        if(VIA1ShCnt)
+          goto doViaShRegI;
         break;
       case 3 << 2:   // shift in, usa Ext clock
-    		VIA1RegR[0xa] <<= 1;
-        goto updViaShReg;
+        if(VIA1ShCnt) {
+doViaShRegI:
+      		VIA1RegR[0xa] <<= 1;
+          goto updViaShReg;
+          }
         break;
       case 4 << 2:   // shift out, usa Timer2, free running
-    		VIA1RegW[0xa] <<= 1;
-        goto updViaShReg;
+        goto doViaShRegO;
         break;
       case 5 << 2:   // shift out, usa Timer2
-    		VIA1RegW[0xa] <<= 1;
-        goto updViaShReg;
+        if(VIA1ShCnt)
+          goto doViaShRegO;
         break;
       case 6 << 2:   // shift out, usa Clock
-    		VIA1RegW[0xa] <<= 1;
-        goto updViaShReg;
+        if(VIA1ShCnt)
+          goto doViaShRegO;
         break;
       case 7 << 2:   // shift out, usa Ext clock
-    		VIA1RegW[0xa] <<= 1;
+//        if(keysFeedPtr==255)    // bah diciamo, qua
+//          goto no_VIAshift;
+        if(VIA1ShCnt) {
+doViaShRegO:
+      		VIA1RegW[0xa] <<= 1;
         
 updViaShReg:
-        VIA1ShCnt++;
-        if(VIA1ShCnt>=8) {
-          if(VIA1RegW[0xe] & 0x04) {
-            VIA1RegR[0xd] |= 0x84;
-          //  VIAIRQ=1;
+          VIA1ShCnt++;
+          if(VIA1ShCnt>8) {   //1..8
+            if(VIA1RegW[0xe] & 0x04) {
+              VIA1RegR[0xd] |= 0x84;
+              VIAIRQ=1;
+              }
+            VIA1ShCnt=0;
             }
-          VIA1ShCnt=0;
           }
+no_VIAshift:
         break;
       }
 #elif MICHELEFABBRI
@@ -448,14 +498,16 @@ updViaShReg:
 //			printf("%04x    %02x\n",_pc,GetValue(_pc));
 			}
 
-		if(DoReset) {
+		if(CPUPins & DoReset) {
+      initHW();
+      
       IPL=0b000;  // 
       FC=0b110; // supervisor mode, program
       _f.SR.w=0b0010011100000000;   // supervisor, IPL=7, area programma VERIFICARE
 			_pc=GetIntValue(0x00000004);
 			_sp=GetIntValue(0x00000000);   // bah per sicurezza li imposto entrambi :D NO!
       a7S=_sp;
-			DoReset=DoStop=DoHalt=0;
+			CPUPins=0;
       ActivateReset=128;    // così facciamo tutto :)
 			}
 		if(IPL > _f.SR.IRQMask || IPL==7) {     // https://www.cs.mcgill.ca/~cs573/fall2002/notes/lec273/lecture21/21_2.htm
@@ -492,7 +544,7 @@ updViaShReg:
 #ifdef QL
       _pc=GetIntValue(/* 24*4 */ 0x00000060+IPL*4);   // ovviamente facciam b ;)
 #elif MACINTOSH
-      GetIntValue(0x00fffff0+IPL*2+1);   // serve solo a "gestire" (v.)
+      GetValue(0x00fffff0+IPL*2+1);   // serve solo a "gestire" (v.)
       _pc=GetIntValue(/* 24*4 */ 0x00000060+IPL*4);   // ovviamente facciam b ;)
       /* 64=VIA
        * 68 SCC
@@ -509,19 +561,19 @@ updViaShReg:
 
 		if(DoStop)
 			continue;		// esegue cmq IRQ FORSE qua
-//		if(DoHalt)
-//			continue;		// boh 
+		if(CPUPins & DoHalt)
+			continue;		// boh 
 
     if(ActivateReset) {
       // abbassare pin HW...
       ActivateReset--;
       if(!ActivateReset) {
         
-        TIMIRQ=VIDIRQ=KBDIRQ=SERIRQ=RTCIRQ=MDVIRQ=0;
 #ifdef QL
+        TIMIRQ=VIDIRQ=KBDIRQ=RTCIRQ=MDVIRQ=0;
         IPCW=255; IPCR=0; IPCData=IPCState=0; IPCCnt=4;
 #elif MACINTOSH
-        
+        TIMIRQ=VIDIRQ=KBDIRQ=SCCIRQ=RTCIRQ=VIAIRQ=0;
 #endif
         Keyboard[0] = Keyboard[1] = Keyboard[2] = 0x0;
 
@@ -539,6 +591,7 @@ isExcep:
       _f.SR.Supervisor=1;
       regsA[7].d=a7S;
       _sp-=4;
+      // PC dell'eccezione, qua
       PutIntValue(_sp,_pc); // low word prima
       _sp-=2;
       PutShortValue(_sp,_fsup.w);
@@ -554,13 +607,19 @@ isExcep:
       // ACCESS ADDRESS HIGH 
       // ACCESS ADDRESS LOW
       // e poi status/PC come solito
+#ifdef MC68020
+#endif
 
       AddressExcep.active=0;
       printf("68K memory exception %X\r\n",_pc);
       
       _pc=GetIntValue(3*4);
       }
-    if(BusExcep.active) {    // mettere
+    if(CPUPins & BErr) {    // mettere
+      CPUPins &= ~BErr;
+      // PC dell'eccezione, qua
+#ifdef MC68020
+#endif
       }
     if(DoTrace) {
       DoTrace=0;
@@ -586,12 +645,12 @@ isExcep:
   */    
     
     
-      if(!SW1) {        // test tastiera, v.semaforo di là
+      if(!SW1) {        // reset sw (test tastiera
        // continue;
         __delay_ms(100); ClrWdt();
-        DoReset=1;
+        CPUPins=DoReset;
         }
-      if(!SW2) {        // test tastiera
+      if(!SW2) {        // test tastiera, v.semaforo di là
         if(keysFeedPtr==255)      // debounce...
           keysFeedPtr=254;
         }
@@ -606,7 +665,10 @@ isExcep:
   
     if(_f.SR.Trace /* && !IRQ ... */)
       DoTrace=1;
-      
+
+#ifndef MC68020
+    _pc &= 0x00ffffff;      // !!
+#endif
 		Pipe1=GetPipe(_pc); _pc+=2;
     if(AddressExcep.active)     // bah serve davvero?? (Macintosh 2024
       goto isExcep;
@@ -637,6 +699,8 @@ aggSR:
                 else {
 doPrivilegeTrap:
                   res3.b.l=8;
+                  // PC dell'eccezione, qua
+                  _pc-=2;
                   goto doTrap;
                   }
 	              break;
@@ -3183,7 +3247,7 @@ aggFlagC4:
 						//N — Set if Dn < 0; cleared if Dn > effective address operand; undefined otherwise.
             if(((int16_t)DEST_REG_D.w.l) < 0 || DEST_REG_D.w.l > ((int16_t)res3.w))
               //trap #6
-trap_chk_6:// ???pc-2
+trap_chk_6:// 
               res3.b.l=6;
               goto doTrap;
               }
@@ -4013,6 +4077,7 @@ trap_chk_6:// ???pc-2
 										break;
 									case SIZE_ELSE:      // ILLEGAL TAS
 										if(Pipe1.b[0] != 0xfc) {   // TAS
+                      // dice cmq che anche FA e FB sarebbero riservate come illegali, ma per uso motorola...
 											res3.b.l = GetValue((int16_t)Pipe2.w);
 											PutValue((int16_t)Pipe2.w,res3.b.l | 0x80);
 											}
@@ -4463,6 +4528,7 @@ doTrap:
             regsA[7].d=a7S;
             _sp-=4;
             PutIntValue(_sp,_pc); // low word prima
+            // PC DOPO l'eccezione, in generale (vedi casi specifici: BUS ADDR PRIV 1010 1111
             _sp-=2;
             PutShortValue(_sp,_fsup.w);
             _pc=GetIntValue(res3.b.l*4);
@@ -6218,19 +6284,19 @@ no_bra:
               case DATAREGADD:   // Dn qua SUBX Dn
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
-                    res2.b.l = WORKING_REG_D.b.b0 + _f.CCR.Ext;
+                    res2.b.l = WORKING_REG_D.b.b0 ;
                     res1.b.l = DEST_REG_D.b.b0;
-                    res3.b.l = DEST_REG_D.b.b0 = res1.b.l - res2.b.l;
+                    res3.b.l = DEST_REG_D.b.b0 = res1.b.l - res2.b.l- _f.CCR.Ext;
                     break;
                   case WORD_SIZE:
-                    res2.w = WORKING_REG_D.w.l + _f.CCR.Ext;
+                    res2.w = WORKING_REG_D.w.l;
                     res1.w = DEST_REG_D.w.l;
-                    res3.w = DEST_REG_D.w.l = res1.w - res2.w;
+                    res3.w = DEST_REG_D.w.l = res1.w - res2.w- _f.CCR.Ext;
                     break;
                   case DWORD_SIZE:
-                    res2.d = WORKING_REG_D.d + _f.CCR.Ext;
+                    res2.d = WORKING_REG_D.d;
                     res1.d = DEST_REG_D.d; 
-                    res3.d = DEST_REG_D.d = res1.d - res2.d;
+                    res3.d = DEST_REG_D.d = res1.d - res2.d- _f.CCR.Ext;
                     break;
                   }
                 goto aggFlagSX;
@@ -6238,27 +6304,27 @@ no_bra:
               case ADDRREGADD:   // An qua SUBX -(An) 
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
-                    --WORKING_REG_A.d; res2.b.l = GetValue(WORKING_REG_A.d) + _f.CCR.Ext;
+                    --WORKING_REG_A.d; res2.b.l = GetValue(WORKING_REG_A.d);
                     // secondo il simulatore non raddoppia A7 qua..
                     --DEST_REG_A.d; res1.b.l = GetValue(DEST_REG_A.d);
-                    res3.b.l = res1.b.l - res2.b.l;
+                    res3.b.l = res1.b.l - res2.b.l- _f.CCR.Ext;
                     PutValue(DEST_REG_A.d, res3.b.l);
                     break;
                   case WORD_SIZE:
-                    WORKING_REG_A.d-=2; res2.w = GetShortValue(WORKING_REG_A.d) + _f.CCR.Ext;
+                    WORKING_REG_A.d-=2; res2.w = GetShortValue(WORKING_REG_A.d);
                     DEST_REG_A.d-=2; res1.w = GetShortValue(DEST_REG_A.d);
-                    res3.w = res1.w - res2.w;
+                    res3.w = res1.w - res2.w- _f.CCR.Ext;
                     PutShortValue(DEST_REG_A.d, res3.w);
                     break;
                   case DWORD_SIZE:
-                    WORKING_REG_A.d-=4; res2.d = GetIntValue(WORKING_REG_A.d) + _f.CCR.Ext;
+                    WORKING_REG_A.d-=4; res2.d = GetIntValue(WORKING_REG_A.d);
                     DEST_REG_A.d-=4; res1.d = GetIntValue(DEST_REG_A.d);
-                    res3.d = res1.d - res2.d;
+                    res3.d = res1.d - res2.d- _f.CCR.Ext;
                     PutIntValue(DEST_REG_A.d, res3.d);
                     break;
                   }
 aggFlagSX:
-#warning verificare cmq se le varie opzioni qua vanno a posto con i flag e il comportamento speciale di addx
+
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(res3.b.l) _f.CCR.Zero=0;  // cleared or unchanged
@@ -7068,6 +7134,9 @@ aggFlagSX:
  			case 0xae:
  			case 0xaf:
 		    res3.b.l=10;
+        _pc-=2;
+        // PC dell'eccezione, qua
+//#warning boh 1010??   https://bitsavers.computerhistory.org/pdf/peripheralTechnology/PT68K4/stark/P4HUMBUG.TXT
 		    goto doTrap;
 				break;
         
@@ -8129,19 +8198,19 @@ aggFlagSX:
               case DATAREGADD:   // qua ADDX Dn
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
-                    res2.b.l = WORKING_REG_D.b.b0 + _f.CCR.Ext;
+                    res2.b.l = WORKING_REG_D.b.b0 ;
                     res1.b.l = DEST_REG_D.b.b0;
-                    res3.b.l = DEST_REG_D.b.b0 = res1.b.l + res2.b.l;
+                    res3.b.l = DEST_REG_D.b.b0 = res1.b.l + res2.b.l+ _f.CCR.Ext;
                     break;
                   case WORD_SIZE:
-                    res2.w = WORKING_REG_D.w.l + _f.CCR.Ext;
+                    res2.w = WORKING_REG_D.w.l ;
                     res1.w = DEST_REG_D.w.l;
-                    res3.w = DEST_REG_D.w.l = res1.w + res2.w;
+                    res3.w = DEST_REG_D.w.l = res1.w + res2.w+ _f.CCR.Ext;
                     break;
                   case DWORD_SIZE:
-                    res2.d = WORKING_REG_D.d + _f.CCR.Ext;
+                    res2.d = WORKING_REG_D.d ;
                     res1.d = DEST_REG_D.d; 
-                    res3.d = DEST_REG_D.d = res1.d + res2.d;
+                    res3.d = DEST_REG_D.d = res1.d + res2.d+ _f.CCR.Ext;
                     break;
                   }
                 goto aggFlagAX;
@@ -8149,28 +8218,28 @@ aggFlagSX:
               case ADDRREGADD:   // An  qua ADDX (-An)
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
-										--WORKING_REG_A.d; res2.b.l = GetValue(WORKING_REG_A.d) + _f.CCR.Ext;
+										--WORKING_REG_A.d; res2.b.l = GetValue(WORKING_REG_A.d);
                     // secondo il simulatore non raddoppia A7 qua..
                     --DEST_REG_A.d; res1.b.l = GetValue(DEST_REG_A.d);
-                    res3.b.l = res1.b.l + res2.b.l;
+                    res3.b.l = res1.b.l + res2.b.l + _f.CCR.Ext;
                     PutValue(DEST_REG_A.d, res3.b.l);
                     break;
                   case WORD_SIZE:
-                    WORKING_REG_A.d-=2; res2.w = GetShortValue(WORKING_REG_A.d) + _f.CCR.Ext;
+                    WORKING_REG_A.d-=2; res2.w = GetShortValue(WORKING_REG_A.d);
                     DEST_REG_A.d-=2; res1.w = GetShortValue(DEST_REG_A.d);
-                    res3.w = res1.w + res2.w;
+                    res3.w = res1.w + res2.w + _f.CCR.Ext;
                     PutShortValue(DEST_REG_A.d, res3.w);
                     break;
                   case DWORD_SIZE:
-                    WORKING_REG_A.d-=4; res2.d = GetIntValue(WORKING_REG_A.d) + _f.CCR.Ext;
+                    WORKING_REG_A.d-=4; res2.d = GetIntValue(WORKING_REG_A.d) ;
                     DEST_REG_A.d-=4; res1.d = GetIntValue(DEST_REG_A.d);
-                    res3.d = res1.d + res2.d;
+                    res3.d = res1.d + res2.d+ _f.CCR.Ext;
                     PutIntValue(DEST_REG_A.d, res3.d);
                     break;
                   }
 
 aggFlagAX:
-#warning verificare cmq se le varie opzioni qua vanno a posto con i flag e il comportamento speciale di addx
+
                 switch(OPERAND_SIZE) {
                   case BYTE_SIZE:
                     if(res3.b.l) _f.CCR.Zero=0;  // cleared or unchanged
@@ -8699,7 +8768,7 @@ aggFlagAX:
                   //ASL, Arithmetic shift left, sets the V flag if the MSB changes sign at any time during the shift.
                   }
                 else {
-                  _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x01;
+                  _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x0001;
                   res3.w = (int16_t)res3.w >> 1;
                   }
                 res2.b.l--;
@@ -8714,7 +8783,7 @@ aggFlagAX:
                   res3.w <<= 1;
                   }
                 else {
-                  _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x01;
+                  _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x0001;
                   res3.w >>= 1;
                   }
                 res2.b.l--;
@@ -8731,7 +8800,7 @@ aggFlagAX:
                   _f.CCR.Ext=f2.Ext;
                   }
                 else {
-                  f2.Ext=res3.b.l & 0x01;
+                  f2.Ext=res3.b.l & 0x0001;
                   res3.w >>= 1;
                   if(_f.CCR.Ext)
                     res3.w |= 0x8000;
@@ -8752,7 +8821,7 @@ aggFlagAX:
                     res3.b.l |= 1;
                   }
                 else {
-                  _f.CCR.Carry=res3.b.l & 0x01;
+                  _f.CCR.Carry=res3.b.l & 0x0001;
                   res3.w >>= 1;
                   if(res3.b.l & 1)
                     res3.w |= 0x8000;
@@ -8917,7 +8986,7 @@ aggFlagRZ1:
                       //ASL, Arithmetic shift left, sets the V flag if the MSB changes sign at any time during the shift.
                       }
                     else {
-                      _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x01;
+                      _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x0001;
                       res3.w = (int16_t)res3.w >> 1;
                       }
                     res2.b.l--;
@@ -8932,7 +9001,7 @@ aggFlagRZ1:
                       res3.w <<= 1;
                       }
                     else {
-                      _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x01;
+                      _f.CCR.Ext=_f.CCR.Carry=res3.b.l & 0x0001;
                       res3.w >>= 1;
                       }
                     res2.b.l--;
@@ -8949,7 +9018,7 @@ aggFlagRZ1:
                       _f.CCR.Ext=f2.Ext;
                       }
                     else {
-                      f2.Ext=res3.b.l & 0x01;
+                      f2.Ext=res3.b.l & 0x0001;
                       res3.w >>= 1;
                       if(_f.CCR.Ext)
                         res3.w |= 0x8000;
@@ -8970,7 +9039,7 @@ aggFlagRZ1:
                         res3.b.l |= 1;
                       }
                     else {
-                      _f.CCR.Carry=res3.b.l & 0x01;
+                      _f.CCR.Carry=res3.b.l & 0x0001;
                       res3.w >>= 1;
                       if(_f.CCR.Carry)
                         res3.w |= 0x8000;
@@ -9094,6 +9163,8 @@ aggFlagRZ4:
  			case 0xfe:
  			case 0xff:
 		    res3.b.l=11;
+        _pc-=2;
+        // PC dell'eccezione, qua
 		    goto doTrap;
 				break;
         
