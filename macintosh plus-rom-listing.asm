@@ -100,9 +100,9 @@ F8     08D5 0007      E_11:      BSet.B    #$7, (A5)
                       ; Init IWM
 FC     207C 00DF E1FF            Move.L    #$DFE1FF, A0
 102    701F                      MoveQ.L   #$1F, D0
-104    4A28 1000      L7:        Tst.B     $1000(A0)       ; ENABLE off @sc
-108    4A28 1A00                 Tst.B     $1A00(A0)       ; Q6 on @sc
-10C    1428 1C00                 Move.B    $1C00(A0), D2   ; Q7 off, read IWM status register @sc
+104    4A28 1000      L7:        Tst.B     $1000(A0)       ; ENABLE off @sc     4 MOTOR off in effetti
+108    4A28 1A00                 Tst.B     $1A00(A0)       ; Q6 on @sc			6
+10C    1428 1C00                 Move.B    $1C00(A0), D2   ; Q7 off, read IWM status register @sc		7
 110    0802 0005                 BTst.B    #$5, D2         ; Check the E bit to see if any drive is on @sc
 114    66EE                      BNE.B     L7
 116    C400                      And.B     D0, D2
@@ -111,7 +111,7 @@ FC     207C 00DF E1FF            Move.L    #$DFE1FF, A0
 11C    1140 1E00                 Move.B    D0, $1E00(A0)   ; Q7 on, write IWM mode register @sc
 120    4A28 1C00                 Tst.B     $1C00(A0)       ; Q7 off @sc
 124    60DE                      Bra.B     L7
-126    4A28 1800      L8:        Tst.B     $1800(A0)       ; Q6 off @sc
+126    4A28 1800      L8:        Tst.B     $1800(A0)       ; Q6 off @sc			6
 12A    4DFA 0006                 Lea.L     E_12, A6
 12E    6000 0C46                 Bra       P_ChecksumRomAndTestMemory ; Call with return address in A6
 132    6700 021E      E_12:      BEQ       P_BootPart2
@@ -551,7 +551,7 @@ FC     207C 00DF E1FF            Move.L    #$DFE1FF, A0
 614    6100 0216                 Bsr       P_InitSCC
 618    4EBA 1F4E                 Jsr       P_InitKeyboard
 61C    43F8 0308                 Lea.L     (DrvQHdr_Flags), A1
-620    4EBA 1416                 Jsr       P_mInitQueue
+620    4EBA 1416                 Jsr       P_mInitQueue			ok 13/12 ******************
 624    6100 0256                 Bsr       P_mInitIOMgr
 628    4CF9 0101 00F8            MoveM.L   ($F80088), D0/A0
        0088
@@ -611,6 +611,7 @@ FC     207C 00DF E1FF            Move.L    #$DFE1FF, A0
 6E8    67FE           L59:       BEQ.B     L59
 6EA    0838 0004 020B            BTst.B    #$4, (SPMisc2)
 6F0    6600 008A                 BNE       L65
+
 
                       P_WaitForBootDisk:
                       ; beginning of the 'question-mark disk' loop @sc
@@ -721,8 +722,8 @@ FC     207C 00DF E1FF            Move.L    #$DFE1FF, A0
 82A    090A                      DC.B      '  '
 
                       P_InitSCC:
-82C    207C 00BF FFF9            Move.L    #$BFFFF9, A0
-832    227C 009F FFF8            Move.L    #$9FFFF8, A1
+82C    207C 00BF FFF9            Move.L    #$BFFFF9, A0		per scrivere SCC
+832    227C 009F FFF8            Move.L    #$9FFFF8, A1		per leggere SCC
 838    21C8 01DC                 Move.L    A0, (SCCWr)
 83C    21C9 01D8                 Move.L    A1, (SCCRd)
 840    45FA FFCA                 Lea.L     DT2, A2
@@ -733,11 +734,11 @@ FC     207C 00DF E1FF            Move.L    #$DFE1FF, A0
 84C    7210                      MoveQ.L   #$10, D1
 
                       P2:
-84E    1411                      Move.B    (A1), D2
+84E    1411                      Move.B    (A1), D2			legge 9ffff8 e 9ffffa   22/12
 850    6006                      Bra.B     L75
 852    2E97           L74:       Move.L    (A7), (A7)
 854    2E97                      Move.L    (A7), (A7)
-856    109A                      Move.B    (A2)+, (A0)
+856    109A                      Move.B    (A2)+, (A0)		scrive 16 volte a BFFFF9 e 16 a BFFFFB, v tabella DT2
 858    51C9 FFF8      L75:       DBF       D1, L74
 85C    4E75                      Rts
 
@@ -762,14 +763,14 @@ FC     207C 00DF E1FF            Move.L    #$DFE1FF, A0
 87C    7030                      MoveQ.L   #$30, D0
 87E    31C0 01D2                 Move      D0, (UnitTableEntryCount)
 882    E580                      AsL.L     #$2, D0
-884    A71E                      _NewPtrSysClear
+884    A71E                      _NewPtrSysClear	************
 886    21C8 011C                 Move.L    A0, (UTableBase)
 88A    9EFC 0032                 SubA      #$32, A7
 88E    204F                      Move.L    A7, A0
 890    4228 001B                 Clr.B     $1B(A0)
-894    43FA FFD8                 Lea.L     DT3, A1         ; name of disk driver @sc
-898    2149 0012                 Move.L    A1, $12(A0)     ; set PB driver name for _Open call @sc
-89C    A000                      _Open                     ; open the disk driver @sc
+894    43FA FFD8                 Lea.L     DT3, A1         ; name of disk driver @sc		"Sony"
+898    2149 0012                 Move.L    A1, $12(A0)     ; set PB driver name for _Open call @sc  ok 13/12
+89C    A000                      _Open                     ; open the disk driver @sc		// metto NOP in code
 89E    43FA FFD4                 Lea.L     DT4, A1         ; name of sound driver @sc
 8A2    2149 0012                 Move.L    A1, $12(A0)     ; set PB driver name for _Open call @sc
 8A6    A000                      _Open                     ; open the sound driver @sc
@@ -783,7 +784,7 @@ FC     207C 00DF E1FF            Move.L    #$DFE1FF, A0
 8C4    A9A0                      _GetResource
 8C6    201F                      Move.L    (A7)+, D0
 8C8    6706                      BEQ.B     L77
-8CA    2040                      Move.L    D0, A0
+8CA    2040                      Move.L    D0, A0				qua c'è merda 0152c ************** 14/12
 8CC    2050                      Move.L    (A0), A0
 8CE    4E90                      Jsr       (A0)
 8D0    4E75           L77:       Rts
@@ -2522,8 +2523,8 @@ FFA    0000 0000 07E0            DC.B      '      '
 1A5E   601E                      Bra.B     L260
 1A60   41F8 018E      L258:      Lea.L     (KeyThresh), A0
 1A64   2278 01D4                 Move.L    (VIA), A1
-1A68   1029 1A00                 Move.B    $1A00(A1), D0
-1A6C   C029 1C00                 And.B     $1C00(A1), D0
+1A68   1029 1A00                 Move.B    $1A00(A1), D0			leggo reg 0xd
+1A6C   C029 1C00                 And.B     $1C00(A1), D0			and reg 0xe
 1A70   08C0 0007                 BSet.B    #$7, D0
 1A74   5888           L259:      AddQ      #$4, A0
 1A76   E208                      LsR.B     #$1, D0
@@ -2595,7 +2596,7 @@ FFA    0000 0000 07E0            DC.B      '      '
 
                       P_mVBLInt_VIA:
 1B12   52B8 016A                 AddQ      #$1, (Ticks)
-1B16   137C 0002 1A00            Move.B    #$2, $1A00(A1)
+1B16   137C 0002 1A00            Move.B    #$2, $1A00(A1)			 scrive 2 in reg 0xd
 1B1C   46FC 2000                 Move      #$2000, SR
 1B20   08F8 0006 0160            BSet.B    #$6, (VBLQueueHdr_Flags)
 1B26   66E8                      BNE.B     E_78
@@ -2614,9 +2615,9 @@ FFA    0000 0000 07E0            DC.B      '      '
 1B4C   0838 0000 016D            BTst.B    #$0, (Ticks.LoByte)
 1B52   6652                      BNE.B     L268
 1B54   7001                      MoveQ.L   #$1, D0
-1B56   1439 00EF E1FE            Move.B    (VIA_Base), D2
-1B5C   E902                      AsL.B     #$4, D2
-1B5E   6A02                      BPL.B     L266
+1B56   1439 00EF E1FE            Move.B    (VIA_Base), D2			 legge reg 0, ORB
+1B5C   E902                      AsL.B     #$4, D2					mouse button, pare
+1B5E   6A02                      BPL.B     L266						0=premuto
 1B60   7002                      MoveQ.L   #$2, D0
 1B62   1238 0172      L266:      Move.B    (MBState), D1
 1B66   B501                      Eor.B     D2, D1
@@ -3216,7 +3217,7 @@ FFA    0000 0000 07E0            DC.B      '      '
 2190   3232 1000      L339:      Move      $0(A2,D1.W), D1
 2194   7000                      MoveQ.L   #$0, D0
 2196   4EB2 1000                 Jsr       $0(A2,D1.W)
-219A   6004                      Bra.B     L341
+219A   6004                      Bra.B     L341							****** qua dopo open
 219C   3140 0010      L340:      Move      D0, $10(A0)
 21A0   48C0           L341:      Ext.L     D0
 21A2   4CDF 7EF8                 MoveM.L   (A7)+, D3-D7/A1-A6
@@ -3251,7 +3252,7 @@ FFA    0000 0000 07E0            DC.B      '      '
 21EE   70E9           L344:      MoveQ.L   #$-17, D0
 21F0   6000 018A                 Bra       L361
 
-                      P_tOpen:
+                      P_tOpen:			1010 _Open
 21F4   48E7 1C30                 MoveM.L   D3-D5/A2-A3, -(A7)
 21F8   2A08                      Move.L    A0, D5
 21FA   3141 0006                 Move      D1, $6(A0)
@@ -3288,7 +3289,7 @@ FFA    0000 0000 07E0            DC.B      '      '
 224C   6606                      BNE.B     L348
 224E   A03C                      _CmpString
 2250   6700 00A6                 BEQ       L354
-2254   5344           L348:      SubQ      #$1, D4
+2254   5344           L348:      SubQ      #$1, D4			qua dal primo _Open
 2256   5342                      SubQ      #$1, D2
 2258   6EC6                      BGT.B     L346
 225A   594F                      SubQ      #$4, A7
@@ -3367,13 +3368,13 @@ FFA    0000 0000 07E0            DC.B      '      '
 2336   0C28 0040 001B            Cmp.B     #$40, $1B(A0)
 233C   6644                      BNE.B     L362
 233E   7208           L357:      MoveQ.L   #$8, D1
-2340   6100 FE10                 Bsr       P46
+2340   6100 FE10                 Bsr       P46  qua?
 2344   6A0E                      BPL.B     L358
 2346   2045                      Move.L    D5, A0
 2348   4268 0018                 Clr       $18(A0)
 234C   08A9 0005 0005            BClr.B    #$5, $5(A1)
 2352   6008                      Bra.B     L359
-2354   0829 0006 0004 L358:      BTst.B    #$6, $4(A1)
+2354   0829 0006 0004 L358:      BTst.B    #$6, $4(A1)      **********
 235A   661A                      BNE.B     L360
 235C   2051           L359:      Move.L    (A1), A0
 235E   0829 0006 0005            BTst.B    #$6, $5(A1)
@@ -3409,7 +3410,7 @@ FFA    0000 0000 07E0            DC.B      '      '
 
                       P_tRead:
 23BE   3428 0018                 Move      $18(A0), D2
-23C2   6B04                      BMI.B     L365
+23C2   6B04                      BMI.B     L365			va a L365, 21/12
 23C4   4EFA 2B52                 Jmp       L_mFileRead
 23C8   48E7 1C30      L365:      MoveM.L   D3-D5/A2-A3, -(A7)
 23CC   70ED                      MoveQ.L   #$-13, D0
@@ -29303,7 +29304,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 1336C  001C 001E FFFF            DC.B      '      '
 13372  0000 0001                 DC.B      '    '
 
-                      P_tInitResources:
+                      P_tInitResources:			_InitResources
 13376  42B8 0B84                 Clr.L     (RMgrLastResHand)
 1337A  6100 0BD2                 Bsr       P548
 1337E  4AB8 0A50                 Tst.L     (TopMapHndl)
@@ -29393,7 +29394,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 13468  2002                      Move.L    D2, D0
 1346A  2078 0B06                 Move.L    (ROMMapHandle), A0
 1346E  2848                      Move.L    A0, A4
-13470  A024                      _SetHandleSize
+13470  A024                      _SetHandleSize					********** qua 15/12
 13472  2002                      Move.L    D2, D0
 13474  2254                      Move.L    (A4), A1
 13476  204A                      Move.L    A2, A0
@@ -29401,7 +29402,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 1347A  337C 0001 0014            Move      #$1, $14(A1)
 13480  6100 0A70                 Bsr       P543
 13484  122A 0004      L2929:     Move.B    $4(A2), D1
-13488  6100 0C78                 Bsr       P558
+13488  6100 0C78                 Bsr       P558						***** proprio qua!
 1348C  D4FC 000C                 AddA      #$C, A2
 13490  51CC FFF2                 DBF       D4, L2929
 13494  4E75                      Rts
@@ -30662,7 +30663,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 140FE  7001                      MoveQ.L   #$1, D0
 14100  4E75                      Rts
 
-                      P558:
+                      P558:  ********* 15/12
 14102  2F09                      Move.L    A1, -(A7)
 14104  202A 0004                 Move.L    $4(A2), D0
 14108  C0B8 031A                 And.L     (Lo3Bytes), D0
@@ -30744,7 +30745,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 141BC  7281                      MoveQ.L   #$-7F, D1
 141BE  6002                      Bra.B     L3088
 141C0  7280           L3087:     MoveQ.L   #$-80, D1
-141C2  E411           L3088:     RXR.B     #$2, D1
+141C2  E411           L3088:     RXR.B     #$2, D1			15/12 ***********
 141C4  0210 001F                 And.B     #$1F, (A0)
 141C8  8310                      Or.B      D1, (A0)
 141CA  4E75                      Rts
@@ -36261,7 +36262,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
                       P699:
                       ; initialize state, then start VIA timer T2 @sc
 1763A  2278 01D4                 Move.L    (VIA), A1
-1763E  137C 0020 1C00            Move.B    #$20, $1C00(A1)
+1763E  137C 0020 1C00            Move.B    #$20, $1C00(A1)			scrive 0x20 in IER (0xE), disabilita timer2 IRQ
 17644  2F02                      Move.L    D2, -(A7)
 17646  74FF                      MoveQ.L   #$-1, D2
 17648  0882 001F                 BClr.B    #$1F, D2
@@ -36300,10 +36301,10 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 17692  C2FC 030C                 MulU      #$30C, D1       ; convert milliseconds to VIA clock cycles @sc
 17696  2278 01D4                 Move.L    (VIA), A1
 1769A  E059                      ROR       #$8, D1
-1769C  1341 1200                 Move.B    D1, $1200(A1)   ; store high byte of delay in T2C-H @sc
+1769C  1341 1200                 Move.B    D1, $1200(A1)   ; store high byte of delay in T2C-H @sc  scrive 0x24 in reg 0x9, T2 high
 176A0  E059                      ROR       #$8, D1
 176A2  1341 1000                 Move.B    D1, $1000(A1)   ; store low byte of delay in T2C-L @sc
-176A6  137C 00A0 1C00            Move.B    #$-60, $1C00(A1) ; enable the timer 2 timeout interrupt @sc
+176A6  137C 00A0 1C00            Move.B    #$-60, $1C00(A1) ; enable the timer 2 timeout interrupt @sc  scrive 0x90 in reg 0x8, T2 low
 176AC  41FA 0008                 Lea.L     P_VIAInt5_Timer2, A0
 176B0  21C8 01A6                 Move.L    A0, (Lvl1DT.5)  ; install the interrupt handler @sc
 176B4  4E75           L3640:     Rts
@@ -37001,7 +37002,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 17D9C  4E75                      Rts
 
                       E_Sony_Open:
-17D9E  203C 0000 0310            Move.L    #$310, D0
+17D9E  203C 0000 0310            Move.L    #$310, D0						**** da _Open
 17DA4  A71E                      _NewPtrSysClear
 17DA6  21C8 0134                 Move.L    A0, (SonyVars)
 17DAA  2089                      Move.L    A1, (A0)
@@ -37052,7 +37053,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 17E48  33BC 0001 100A            Move      #$1, $A(A1,D1.W)
 17E4E  76FE                      MoveQ.L   #$-2, D3
 17E50  601E                      Bra.B     L3668
-17E52  700D           L3667:     MoveQ.L   #$D, D0
+17E52  700D           L3667:     MoveQ.L   #$D, D0			******** qua 14/12
 17E54  6100 07A8                 Bsr       Sony_ReadDriveRegAdr ; read INSTALLED, 0=yes @sc
 17E58  6B28                      BMI.B     L3669
 17E5A  7009                      MoveQ.L   #$9, D0
@@ -37271,7 +37272,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 180BE  6100 0846                 Bsr       Sony_MotorOn1
 180C2  6100 078E                 Bsr       E_Sony_Recal
 180C6  6B34                      BMI.B     L4510
-180C8  6100 091A                 Bsr       E_Sony_MakeSpdTbl
+180C8  6100 091A                 Bsr       E_Sony_MakeSpdTbl			****** 21/12
 180CC  662E                      BNE.B     L4510
 180CE  7006                      MoveQ.L   #$6, D0
 180D0  6100 052C                 Bsr       Sony_ReadDriveRegAdr ; read WRTPRT, 0 = locked @sc
@@ -37301,7 +37302,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 18122  202A 0010                 Move.L    $10(A2), D0     ; the offset, after adjusting for the positioning mode @sc
 18126  7E09                      MoveQ.L   #$9, D7
 18128  EEA8                      LsR.L     D7, D0          ; divide by 512 to get sector number @sc
-1812A  7800                      MoveQ.L   #$0, D4
+1812A  7800                      MoveQ.L   #$0, D4				ok qua 21/12
 1812C  4A31 1012                 Tst.B     $12(A1,D1.W)    ; disk format? 0==single sided @sc
 18130  6702                      BEQ.B     L4515
 18132  7801                      MoveQ.L   #$1, D4
@@ -37375,7 +37376,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 181CA  3342 0028                 Move      D2, $28(A1)     ; store actual number of sectors processed so far @sc
 181CE  1369 002C 002D            Move.B    $2C(A1), $2D(A1)
 181D4  4229 0100                 Clr.B     $100(A1)
-181D8  6100 032A                 Bsr       P856            ; perform the actual read/write? @sc  DISK
+181D8  6100 032A                 Bsr       P856            ; perform the actual read/write? @sc  DISK  qua ok 21/12   *****
 181DC  6716                      BEQ.B     L4526
 181DE  6100 00DC                 Bsr       P855
 181E2  660C                      BNE.B     L4525
@@ -37511,8 +37512,8 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 1834E  6000 0232      L4539:     Bra       L4559
 18352  1369 002E 002F L4540:     Move.B    $2E(A1), $2F(A1)
 18358  3C01           L4541:     Move      D1, D6
-1835A  6100 08A8                 Bsr       P879
-1835E  6B00 01DA                 BMI       L4555
+1835A  6100 08A8                 Bsr       P879		legge tag @gd
+1835E  6B00 01DA                 BMI       L4555				qua dopo lettura header/tag settore 21/12
 18362  B269 0016                 Cmp       $16(A1), D1
 18366  6600 0216                 BNE       L4558
 1836A  3342 00FE                 Move      D2, $FE(A1)
@@ -37576,7 +37577,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 1842C  D240                      Add       D0, D1
 1842E  E541                      AsL       #$2, D1
 18430  3341 00F8                 Move      D1, $F8(A1)
-18434  6100 00CE                 Bsr       P856
+18434  6100 00CE                 Bsr       P856			perform the actual read/write @gd
 18438  6728                      BEQ.B     L4548
 1843A  2629 00F4                 Move.L    $F4(A1), D3
 1843E  6710                      BEQ.B     L4546
@@ -37618,7 +37619,7 @@ FFFE   7094                      MoveQ.L   #$-6C, D0
 184AC  96A8 0028                 Sub.L     $28(A0), D3
 184B0  08F8 0007 015F            BSet.B    #$7, (IntFlag)
 184B6  6714                      BEQ.B     L4550
-184B8  614A                      Bsr.B     P856
+184B8  614A                      Bsr.B     P856				perform the actual read/write @gd
 184BA  6722                      BEQ.B     L4551
 184BC  4A84                      Tst.L     D4
 184BE  660C                      BNE.B     L4550
@@ -37729,9 +37730,9 @@ DT80 = . - $2
 185D8  4A28 0800      L3674:     Tst.B     $800(A0)        ; CA2 off @sc
 185DC  E208           L3675:     LsR.B     #$1, D0
 185DE  6408                      BCC.B     L3676
-185E0  08EA 0005 1E00            BSet.B    #$5, $1E00(A2)  ; SEL on @sc
+185E0  08EA 0005 1E00            BSet.B    #$5, $1E00(A2)  ; SEL on @sc (Head=1 sul VIA (froci 
 185E6  6006                      Bra.B     L3677
-185E8  08AA 0005 1E00 L3676:     BClr.B    #$5, $1E00(A2)  ; SEL off @sc
+185E8  08AA 0005 1E00 L3676:     BClr.B    #$5, $1E00(A2)  ; SEL off @sc (Head=0 sul VIA @gd
 185EE  E208           L3677:     LsR.B     #$1, D0
 185F0  6502                      BCS.B     L3678
 185F2  4A10                      Tst.B     (A0)            ; CA0 off @sc
@@ -37989,11 +37990,11 @@ DT80 = . - $2
 1885E  61E2                      Bsr.B     Sony_CheckDriveNumber
 18860  723F                      MoveQ.L   #$3F, D1
 18862  4A28 1A00                 Tst.B     $1A00(A0)
-18866  1028 1C00                 Move.B    $1C00(A0), D0
-1886A  4A28 1800                 Tst.B     $1800(A0)
+18866  1028 1C00                 Move.B    $1C00(A0), D0		RDDATA0 in status
+1886A  4A28 1800                 Tst.B     $1800(A0)			qua però incrementa ptr... verificare
 1886E  C001                      And.B     D1, D0
 18870  B001                      Cmp.B     D1, D0
-18872  6734                      BEQ.B     L4591
+18872  6734                      BEQ.B     L4591			; ok qua su disco 1 (IWM=0x12 21/12
 18874  7402                      MoveQ.L   #$2, D2
 18876  4842                      Swap      D2
 18878  721F           L4589:     MoveQ.L   #$1F, D1
@@ -38002,7 +38003,7 @@ DT80 = . - $2
 1887E  6B62                      BMI.B     L4596
 18880  4A28 1000                 Tst.B     $1000(A0)
 18884  4A28 1A00                 Tst.B     $1A00(A0)
-18888  1028 1C00                 Move.B    $1C00(A0), D0
+18888  1028 1C00                 Move.B    $1C00(A0), D0	; leggo MotorOn, b7=0 se on
 1888C  0800 0005                 BTst.B    #$5, D0
 18890  66E6                      BNE.B     L4589
 18892  C001                      And.B     D1, D0
@@ -38020,7 +38021,7 @@ DT80 = . - $2
 188B4  E248                      LsR       #$1, D0
 188B6  6100 FF1C      L4593:     Bsr       E_Sony_WakeUp
 188BA  700A                      MoveQ.L   #$A, D0
-188BC  6100 FD40                 Bsr       Sony_ReadDriveRegAdr ; read TK0, 0 = at track 0 @sc
+188BC  6100 FD40                 Bsr       Sony_ReadDriveRegAdr ; read TK0, 0 = at track 0 @sc			qua ok 21/12
 188C0  6A1A                      BPL.B     L4594
 188C2  7001                      MoveQ.L   #$1, D0
 188C4  6100 FD52                 Bsr       Sony_WriteDriveRegAdr ; write DIRTN = towards track 0 @sc
@@ -38085,10 +38086,10 @@ DT80 = . - $2
 18952  4A28 1400                 Tst.B     $1400(A0)       ; select internal drive @sc
 18956  4A28 1200                 Tst.B     $1200(A0)       ; enable drive 1 @sc
 1895A  4E75                      Rts
-1895C  4A28 0A00      L4601:     Tst.B     $A00(A0)        ; CA2 on @sc
-18960  4A28 0600                 Tst.B     $600(A0)        ; CA1 on @sc
+1895C  4A28 0A00      L4601:     Tst.B     $A00(A0)        ; CA2 on @sc			2
+18960  4A28 0600                 Tst.B     $600(A0)        ; CA1 on @sc			1
 18964  4A28 0200                 Tst.B     $200(A0)        ; CA0 on @sc
-18968  08AA 0005 1E00            BClr.B    #$5, $1E00(A2)  ; SEL off @sc
+18968  08AA 0005 1E00            BClr.B    #$5, $1E00(A2)  ; SEL off @sc (Head=0 sul VIA @gd frouci
 1896E  4A28 1600                 Tst.B     $1600(A0)       ; select external drive @sc
 18972  4A29 00FC                 Tst.B     $FC(A1)
 18976  6706                      BEQ.B     L4602
@@ -38102,11 +38103,11 @@ DT80 = . - $2
 1898C  007C 0300                 Or        #$300, SR
 18990  4A28 1A00                 Tst.B     $1A00(A0)       ; Q6 on @sc
 18994  4A28 1C00      L4604:     Tst.B     $1C00(A0)       ; Q7 off, read status - drive installed, 0 = yes @sc
-18998  5AC8 000A                 DBPL      D0, L4605
+18998  5AC8 000A                 DBPL      D0, L4605		; al primo giro prova disco 2, non lo trova, fa eject (IWM=0x77), poi fa motorOn sul disco 1
 1899C  4A28 1800                 Tst.B     $1800(A0)       ; Q6 off @sc
 189A0  46DF                      Move      (A7)+, SR
 189A2  4E75                      Rts
-189A4  4A28 0E00      L4605:     Tst.B     $E00(A0)        ; LSTRB on, EJECT?? @sc
+189A4  4A28 0E00      L4605:     Tst.B     $E00(A0)        ; LSTRB on, EJECT(?? pare) @sc
 189A8  2E97                      Move.L    (A7), (A7)
 189AA  4A28 0C00                 Tst.B     $C00(A0)        ; LSTRB off @sc
 189AE  2E97                      Move.L    (A7), (A7)
@@ -38303,7 +38304,7 @@ DT80 = . - $2
 18B78  67F0                      BEQ.B     L4821
 18B7A  0C43 0003                 Cmp       #$3, D3
 18B7E  6FEA                      BLE.B     L4821
-18B80  4A28 1000      L4822:     Tst.B     $1000(A0)
+18B80  4A28 1000      L4822:     Tst.B     $1000(A0)		; EN=0 @gd
 18B84  46DF           L4823:     Move      (A7)+, SR
 18B86  4E75                      Rts
 
@@ -38374,13 +38375,14 @@ DT80 = . - $2
 18C32  4A15           L4629:     Tst.B     (A5)
 18C34  6B02                      BMI.B     L4630
 18C36  1F16                      Move.B    (A6), -(A7)     ; push SCC Channel A data on stack if waitRq is zero @sc
-18C38  1A14           L4630:     Move.B    (A4), D5        ; get a disk byte @sc
+18C38  1A14           L4630:     Move.B    (A4), D5        ; get a disk byte @sc    RDDATA0  ok 21/12
 18C3A  51CA 0008                 DBF       D2, L4631
-18C3E  70BE                      MoveQ.L   #$-42, D0       ; error -66, no nybble error, disk is probably blank @sc
+18C3E  70BE                      MoveQ.L   #$-42, D0       ; error -66, no nibble error, disk is probably blank @sc
 18C40  6000 008A                 Bra       L4644
 18C44  6AEC           L4631:     BPL.B     L4629           ; if it's not a valid disk byte, keep trying @sc
 18C46  5343                      SubQ      #$1, D3
 18C48  66E8                      BNE.B     L4629           ; keep going until we've gotten 3 valid disk bytes @sc
+
 18C4A  303C 05DC                 Move      #$5DC, D0
 18C4E  4A31 1013                 Tst.B     $13(A1,D1.W)    ; interface? 00=400K @sc
 18C52  6704                      BEQ.B     L4632
@@ -38388,11 +38390,11 @@ DT80 = . - $2
 18C58  47FA 01D4      L4632:     Lea.L     DT175, A3       ; GCR decode table @sc
 18C5C  204A           L4633:     Move.L    A2, A0          ; begin looking for magic preamble header: D5 AA 96 @sc
 18C5E  7203                      MoveQ.L   #$3, D1
-18C60  1A14           L4634:     Move.B    (A4), D5
+18C60  1A14           L4634:     Move.B    (A4), D5				ok ! 21/12  IWM=0x14
 18C62  6AFC                      BPL.B     L4634           ; wait for a disk byte @sc
-18C64  4A15                      Tst.B     (A5)            ; check SCC waitRq @sc
+18C64  4A15                      Tst.B     (A5)            ; check SCC waitRq @sc		legge reg 1 ORA di VIA
 18C66  6B02                      BMI.B     L4635
-18C68  1F16                      Move.B    (A6), -(A7)     ; push SCC Channel A data on stack if waitRq is zero @sc
+18C68  1F16                      Move.B    (A6), -(A7)     ; push SCC Channel A data on stack if waitRq is zero @sc  legge reg 6 di SCC
 18C6A  51C8 0006      L4635:     DBF       D0, L4636
 18C6E  70BD                      MoveQ.L   #$-43, D0       ; error -67, can't find an address mark @sc
 18C70  605A                      Bra.B     L4644
@@ -38433,7 +38435,7 @@ DT80 = . - $2
 18CC0  6B02                      BMI.B     L4643
 18CC2  1F16                      Move.B    (A6), -(A7)
 18CC4  BA18           L4643:     Cmp.B     (A0)+, D5
-18CC6  660C                      BNE.B     L4646           ; BtSlp (trailer mismatch) error @sc
+18CC6  660C                      BNE.B     L4646           ; BitSlp (trailer mismatch) error @sc
 18CC8  51CC FFF0                 DBF       D4, L4642       ; keep going for 2 bytes - final trailer byte is not checked? @sc
 18CCC  6000 FE54      L4644:     Bra       L4625           ; done @sc
 18CD0  70BB           L4645:     MoveQ.L   #$-45, D0       ; error -69, bad checksum error - bad address mark @sc
@@ -38449,18 +38451,18 @@ DT80 = . - $2
 
                       P_Sony_RdData:
 18CE8  21DF 0124                 Move.L    (A7)+, (DskRtnAdr)
-18CEC  7430                      MoveQ.L   #$30, D2
+18CEC  7430                      MoveQ.L   #$30, D2			 ci provo 48 volte a cercare Header (in pratica salto bitlip 0xff...
 18CEE  7600                      MoveQ.L   #$0, D3
-18CF0  70C0                      MoveQ.L   #$-40, D0       ; error -64, drive not installed @sc
+18CF0  70C0                      MoveQ.L   #$-40, D0       ; error -64, drive not installed @sc usato anche come mask $c0 sotto @gd
 18CF2  283C 01FE 000A            Move.L    #$1FE000A, D4   ; $1FE.000A = 510 bytes data, 10 bytes tags @sc
 18CF8  7A00                      MoveQ.L   #$0, D5
 18CFA  7C00                      MoveQ.L   #$0, D6
-18CFC  7E00                      MoveQ.L   #$0, D7
+18CFC  7E00                      MoveQ.L   #$0, D7			D5 D6 D7 contengono CRC  @gd
 18CFE  2449           L4647:     Move.L    A1, A2          ; put header/trailer table pointer into A2 @sc
 18D00  7203                      MoveQ.L   #$3, D1
 18D02  1614           L4648:     Move.B    (A4), D3        ; read a byte from disk @sc
 18D04  6AFC                      BPL.B     L4648
-18D06  4A15                      Tst.B     (A5)
+18D06  4A15                      Tst.B     (A5)				SCC
 18D08  6B02                      BMI.B     L4649
 18D0A  1F16                      Move.B    (A6), -(A7)
 18D0C  51CA 0006      L4649:     DBF       D2, L4650
@@ -38470,100 +38472,104 @@ DT80 = . - $2
 18D16  66E6                      BNE.B     L4647
 18D18  5341                      SubQ      #$1, D1
 18D1A  66E6                      BNE.B     L4648
-18D1C  1614           L4651:     Move.B    (A4), D3        ; read a byte from disk @sc
+
+18D1C  1614           L4651:     Move.B    (A4), D3        ; read a byte from disk @sc, sector# @gd
 18D1E  6AFC                      BPL.B     L4651
 18D20  43F8 02FB                 Lea.L     (TagData.1), A1
-18D24  12F3 3000                 Move.B    $0(A3,D3.W), (A1)+ ; convert a byte of tags. Assuming A3 is a pointer to the nibble decode table @sc
+18D24  12F3 3000                 Move.B    $0(A3,D3.W), (A1)+ ; convert 1 byte of tags. Assuming A3 is a pointer to the nibble decode table @sc
 18D28  4A15           L4652:     Tst.B     (A5)
 18D2A  6B02                      BMI.B     L4653
 18D2C  1F16                      Move.B    (A6), -(A7)
 18D2E  1614           L4653:     Move.B    (A4), D3        ; read a byte from disk @sc
 18D30  6AF6                      BPL.B     L4652
 18D32  1233 3000                 Move.B    $0(A3,D3.W), D1
-18D36  E519                      ROL.B     #$2, D1
+18D36  E519                      ROL.B     #$2, D1		 ruoto  a sinistra e tengo i 2 bit alti del primo byte data0
 18D38  1401                      Move.B    D1, D2
 18D3A  C400                      And.B     D0, D2
 18D3C  1614           L4654:     Move.B    (A4), D3        ; read a byte from disk @sc
 18D3E  6AFC                      BPL.B     L4654
-18D40  8433 3000                 Or.B      $0(A3,D3.W), D2
-18D44  1607                      Move.B    D7, D3
+18D40  8433 3000                 Or.B      $0(A3,D3.W), D2		inserisco i 6bit in data0
+18D44  1607                      Move.B    D7, D3		1: sommo crc2 a se stesso ?? ah per fare ROTate... ma non c'è ROR??
 18D46  D607                      Add.B     D7, D3
-18D48  E31F                      ROL.B     #$1, D7
-18D4A  BF02                      Eor.B     D7, D2
+18D48  E31F                      ROL.B     #$1, D7		ruoto  a sinistra crc2
+18D4A  BF02                      Eor.B     D7, D2		3: xor crc2 e data0 in data0
 18D4C  12C2                      Move.B    D2, (A1)+       ; store a decoded byte @sc
-18D4E  DB02                      AddX.B    D2, D5
-18D50  E519                      ROL.B     #$2, D1
+18D4E  DB02                      AddX.B    D2, D5		2: sommo data0 e carry a crc0
+18D50  E519                      ROL.B     #$2, D1		ruoto  a sinistra ancora e ho i 2bit alti del secondo byte data1
 18D52  1401                      Move.B    D1, D2
 18D54  C400                      And.B     D0, D2
 18D56  1614           L4655:     Move.B    (A4), D3        ; read a byte from disk @sc
 18D58  6AFC                      BPL.B     L4655
-18D5A  8433 3000                 Or.B      $0(A3,D3.W), D2
-18D5E  BB02                      Eor.B     D5, D2
+18D5A  8433 3000                 Or.B      $0(A3,D3.W), D2	inserisco i 6bit in data1
+18D5E  BB02                      Eor.B     D5, D2		5: xor crc0 e data1 in data1
 18D60  12C2                      Move.B    D2, (A1)+       ; store a decoded byte @sc
-18D62  DD02                      AddX.B    D2, D6
-18D64  E519                      ROL.B     #$2, D1
+18D62  DD02                      AddX.B    D2, D6		4: sommo data1 e carry a crc1
+18D64  E519                      ROL.B     #$2, D1		ruoto  a sinistra ancora e ho i 2bit alti del terzo byte data2
 18D66  C200                      And.B     D0, D1
 18D68  4A15                      Tst.B     (A5)
 18D6A  6B02                      BMI.B     L4656
 18D6C  1F16                      Move.B    (A6), -(A7)
-18D6E  1614           L4656:     Move.B    (A4), D3
+18D6E  1614           L4656:     Move.B    (A4), D3        ; read a byte from disk @gd
 18D70  6AFC                      BPL.B     L4656
-18D72  8233 3000                 Or.B      $0(A3,D3.W), D1
-18D76  BD01                      Eor.B     D6, D1
+18D72  8233 3000                 Or.B      $0(A3,D3.W), D1   inserisco i 6bit in data2
+18D76  BD01                      Eor.B     D6, D1		7: xor crc1 e data2 in data2
 18D78  12C1                      Move.B    D1, (A1)+       ; store a decoded byte @sc
-18D7A  DF01                      AddX.B    D1, D7
-18D7C  5744                      SubQ      #$3, D4         ; decrement count of remaining bytes @sc
+18D7A  DF01                      AddX.B    D1, D7		6: sommo data2 e carry a crc2
+18D7C  5744                      SubQ      #$3, D4         ; decrement count of remaining bytes @sc  (4 GCR nibbles, 3 bytes
 18D7E  6AA8                      BPL.B     L4652           ; branch if more bytes remain @sc
 18D80  4844                      Swap      D4              ; done with tag bytes @sc
+
 18D82  4A38 012C                 Tst.B     (DskVerify)
 18D86  6708                      BEQ.B     L4658
 18D88  6062                      Bra.B     L4663
+
 18D8A  4A15           L4657:     Tst.B     (A5)
 18D8C  6B02                      BMI.B     L4658
 18D8E  1F16                      Move.B    (A6), -(A7)
-18D90  1614           L4658:     Move.B    (A4), D3        ; READ DATA start - read a byte from disk @sc
+18D90  1614           L4658:     Move.B    (A4), D3        ; READ DATA start - read a byte from disk @sc  for storing! @gd
 18D92  6AF6                      BPL.B     L4657
-18D94  1233 3000                 Move.B    $0(A3,D3.W), D1
-18D98  E519                      ROL.B     #$2, D1
+18D94  1233 3000                 Move.B    $0(A3,D3.W), D1		qua ci sono i bit alti dei 3 byte reali
+18D98  E519                      ROL.B     #$2, D1			ruoto  a sinistra e tengo i 2 bit alti del primo byte data0
 18D9A  1401                      Move.B    D1, D2
 18D9C  C400                      And.B     D0, D2
 18D9E  1614           L4659:     Move.B    (A4), D3        ; read a byte from disk @sc
 18DA0  6AFC                      BPL.B     L4659
-18DA2  8433 3000                 Or.B      $0(A3,D3.W), D2
+18DA2  8433 3000                 Or.B      $0(A3,D3.W), D2	inserisco i 6bit in data0
 18DA6  1607                      Move.B    D7, D3
-18DA8  D607                      Add.B     D7, D3
-18DAA  E31F                      ROL.B     #$1, D7
-18DAC  BF02                      Eor.B     D7, D2
+18DA8  D607                      Add.B     D7, D3			1: sommo crc2 a se stesso ?? ah per fare ROTate... ma non c'è ROR??
+18DAA  E31F                      ROL.B     #$1, D7			ruoto a sinistra crc2
+18DAC  BF02                      Eor.B     D7, D2			3: xor crc2 e data0 in data0
 18DAE  10C2                      Move.B    D2, (A0)+       ; store a decoded byte @sc
-18DB0  DB02                      AddX.B    D2, D5
-18DB2  E519                      ROL.B     #$2, D1
+18DB0  DB02                      AddX.B    D2, D5			2: sommo data0 e carry a crc0
+18DB2  E519                      ROL.B     #$2, D1			ruoto a sinistra ancora e ho i 2bit alti del secondo byte data1
 18DB4  1401                      Move.B    D1, D2
 18DB6  C400                      And.B     D0, D2
 18DB8  1614           L4660:     Move.B    (A4), D3        ; read a byte from disk @sc
 18DBA  6AFC                      BPL.B     L4660
-18DBC  8433 3000                 Or.B      $0(A3,D3.W), D2
-18DC0  BB02                      Eor.B     D5, D2
+18DBC  8433 3000                 Or.B      $0(A3,D3.W), D2	inserisco i 6bit in data1
+18DC0  BB02                      Eor.B     D5, D2			5: xor crc0 e data1 in data1
 18DC2  10C2                      Move.B    D2, (A0)+       ; store a decoded byte @sc
-18DC4  DD02                      AddX.B    D2, D6
+18DC4  DD02                      AddX.B    D2, D6			4: sommo data1 e carry a crc1
 18DC6  4A44                      Tst       D4
-18DC8  677E                      BEQ.B     L4668           ; end of data? @sc
-18DCA  E519                      ROL.B     #$2, D1
+18DC8  677E                      BEQ.B     L4668           ; end of data? @sc  perché 512 non è multiplo esatto di 3! (170x3+2
+18DCA  E519                      ROL.B     #$2, D1			ruoto a sinistra ancora e ho i 2bit alti del terzo byte data2
 18DCC  C200                      And.B     D0, D1
 18DCE  4A15                      Tst.B     (A5)
 18DD0  6B02                      BMI.B     L4661
 18DD2  1F16                      Move.B    (A6), -(A7)
 18DD4  1614           L4661:     Move.B    (A4), D3        ; read a byte from disk @sc
 18DD6  6AFC                      BPL.B     L4661
-18DD8  8233 3000                 Or.B      $0(A3,D3.W), D1
-18DDC  BD01                      Eor.B     D6, D1
+18DD8  8233 3000                 Or.B      $0(A3,D3.W), D1	inserisco i 6bit in data2
+18DDC  BD01                      Eor.B     D6, D1			7: xor crc1 e data2 in data2
 18DDE  10C1                      Move.B    D1, (A0)+       ; store a decoded byte @sc
-18DE0  DF01                      AddX.B    D1, D7
-18DE2  5744                      SubQ      #$3, D4
+18DE0  DF01                      AddX.B    D1, D7			6: sommo data2 e carry a crc2
+18DE2  5744                      SubQ      #$3, D4		4 GCR nibbles, 3 bytes
 18DE4  60A4                      Bra.B     L4657
+
 18DE6  4A15           L4662:     Tst.B     (A5)
 18DE8  6B02                      BMI.B     L4663
 18DEA  1F16                      Move.B    (A6), -(A7)
-18DEC  1614           L4663:     Move.B    (A4), D3        ; READ VERIFY - read a byte from disk @sc
+18DEC  1614           L4663:     Move.B    (A4), D3        ; READ VERIFY - read a byte from disk @sc  for verify! @gd
 18DEE  6AF6                      BPL.B     L4662
 18DF0  1233 3000                 Move.B    $0(A3,D3.W), D1
 18DF4  E519                      ROL.B     #$2, D1
@@ -38605,23 +38611,24 @@ DT80 = . - $2
 18E42  DF01                      AddX.B    D1, D7
 18E44  5744                      SubQ      #$3, D4
 18E46  609E                      Bra.B     L4662
+
 18E48  4A15           L4668:     Tst.B     (A5)            ; CHECKSUM - read and verify the data checksum @sc
 18E4A  6B02                      BMI.B     L4669
 18E4C  1F16                      Move.B    (A6), -(A7)
-18E4E  1614           L4669:     Move.B    (A4), D3        ; read a byte from disk - first checksum byte? @sc
+18E4E  1614           L4669:     Move.B    (A4), D3        ; read a byte from disk - first checksum byte? @sc  0xb5 
 18E50  6AFC                      BPL.B     L4669
 18E52  1233 3000                 Move.B    $0(A3,D3.W), D1
 18E56  6B46                      BMI.B     L4673           ; invalid disk byte? @sc
 18E58  E519                      ROL.B     #$2, D1
 18E5A  1401                      Move.B    D1, D2
 18E5C  C400                      And.B     D0, D2
-18E5E  1614           L4670:     Move.B    (A4), D3        ; read a byte from disk - second checksum byte? @sc
+18E5E  1614           L4670:     Move.B    (A4), D3        ; read a byte from disk - second checksum byte @sc
 18E60  6AFC                      BPL.B     L4670
 18E62  1633 3000                 Move.B    $0(A3,D3.W), D3
 18E66  6B36                      BMI.B     L4673           ; invalid disk byte? @sc
 18E68  8403                      Or.B      D3, D2
 18E6A  BA02                      Cmp.B     D2, D5
-18E6C  6630                      BNE.B     L4673           ; test the checksum @sc
+18E6C  6630                      BNE.B     L4673           ; test the checksum @sc  #1
 18E6E  E519                      ROL.B     #$2, D1
 18E70  1401                      Move.B    D1, D2
 18E72  C400                      And.B     D0, D2
@@ -38631,7 +38638,7 @@ DT80 = . - $2
 18E7C  6B20                      BMI.B     L4673           ; invalid disk byte? @sc
 18E7E  8403                      Or.B      D3, D2
 18E80  BC02                      Cmp.B     D2, D6
-18E82  661A                      BNE.B     L4673           ; test the checksum @sc
+18E82  661A                      BNE.B     L4673           ; test the checksum @sc  #2
 18E84  E519                      ROL.B     #$2, D1
 18E86  C200                      And.B     D0, D1
 18E88  4A15                      Tst.B     (A5)
@@ -38643,7 +38650,7 @@ DT80 = . - $2
 18E96  6B06                      BMI.B     L4673           ; invalid disk byte? @sc
 18E98  8203                      Or.B      D3, D1
 18E9A  BE01                      Cmp.B     D1, D7
-18E9C  6708                      BEQ.B     L4675           ; test the checksum @sc
+18E9C  6708                      BEQ.B     L4675           ; test the checksum @sc  #3
 18E9E  70B8           L4673:     MoveQ.L   #$-48, D0       ; error -72, bad data checksum, bad data mark @sc
 18EA0  601A                      Bra.B     L4678
 18EA2  70BC           L4674:     MoveQ.L   #$-44, D0       ; error -68, read-verify failed @sc
@@ -38661,7 +38668,7 @@ DT80 = . - $2
 18EBC  6000 FC64      L4678:     Bra       L4625
 18EC0  70B7           L4679:     MoveQ.L   #$-49, D0       ; error -73, bad DBtSlp, bad data mark @sc
 18EC2  60F8                      Bra.B     L4678
-                      ; GCR decode table begins here, starting with disk byte $96 @sc
+                      ; GCR decode table begins here, starting with disk byte $96 @sc , ossia sopra carica DT175 che è 0x96 byte sopra
 18EC4  0001 FFFF 0203            DC.B      '      '
 18ECA  FF04 0506 FFFF            DC.B      '      '
 18ED0  FFFF FFFF 0708            DC.B      '      '
@@ -38688,7 +38695,7 @@ DT80 = . - $2
 18F3A  2F38 0232                 Move.L    (DiskVars.JWrData), -(A7)
 18F3E  4E75                      Rts
 
-                      P_Sony_WrData:
+                      P_Sony_WrData:			write disk sector
 18F40  21DF 0124                 Move.L    (A7)+, (DskRtnAdr)
 18F44  43F8 02FB                 Lea.L     (TagData.1), A1
 18F48  283C 0201 0009            Move.L    #$2010009, D4   ; $201.0009 = $201 bytes of data, $9 (+3) bytes of tags @sc
@@ -38697,7 +38704,7 @@ DT80 = . - $2
 18F52  267C 00DF FBFF            Move.L    #$DFFBFF, A3
 18F58  4A13                      Tst.B     (A3)
 18F5A  7006                      MoveQ.L   #$6, D0         ; do 6 times @sc
-18F5C  7A00                      MoveQ.L   #$0, D5
+18F5C  7A00                      MoveQ.L   #$0, D5			D5 D6 D7 sono crc @gd
 18F5E  13DA 00DF FFFF            Move.B    (A2)+, ($DFFFFF) ; write first sync byte @sc
 18F64  7C00                      MoveQ.L   #$0, D6
 18F66  7E00                      MoveQ.L   #$0, D7
@@ -38711,7 +38718,8 @@ DT80 = . - $2
 18F76  5340           L4682:     SubQ      #$1, D0
 18F78  66EE                      BNE.B     L4680           ; end of sync byte loop @sc
 18F7A  121A                      Move.B    (A2)+, D1       ; get one more byte from A2 - $AA @sc
-18F7C  45FA 010C                 Lea.L     DT_Sony_NiblTbl, A2
+
+18F7C  45FA 010C                 Lea.L     DT_Sony_NiblTbl, A2			GCR encode table @gd
 18F80  4A14           L4683:     Tst.B     (A4)
 18F82  6AFC                      BPL.B     L4683
 18F84  1681                      Move.B    D1, (A3)        ; write data (from A2?) @sc
@@ -38719,17 +38727,17 @@ DT80 = . - $2
 18F88  1419                      Move.B    (A1)+, D2       ; get a byte to write from A1 to D2 @sc
 18F8A  602C                      Bra.B     L4689
 18F8C  2248           L4684:     Move.L    A0, A1          ; start writing data instead of tags @sc
-18F8E  DF02           L4685:     AddX.B    D2, D7
-18F90  BD02                      Eor.B     D6, D2
+18F8E  DF02           L4685:     AddX.B    D2, D7			6: crc2
+18F90  BD02                      Eor.B     D6, D2			7: crc1
 18F92  1602                      Move.B    D2, D3
-18F94  EC4B                      LsR       #$6, D3
+18F94  EC4B                      LsR       #$6, D3			shifto a destra per prendere i 2bit alti
 18F96  4A14           L4686:     Tst.B     (A4)
 18F98  6AFC                      BPL.B     L4686
 18F9A  16B2 3000                 Move.B    $0(A2,D3.W), (A3) ; GCR encode D3 @sc
 18F9E  5744                      SubQ      #$3, D4         ; 3 longwords = 12 bytes of tags to write @sc
 18FA0  1607                      Move.B    D7, D3
 18FA2  D607                      Add.B     D7, D3
-18FA4  E31F                      ROL.B     #$1, D7
+18FA4  E31F                      ROL.B     #$1, D7			1: ruoto crc2
 18FA6  0200 003F                 And.B     #$3F, D0
 18FAA  4A15           L4687:     Tst.B     (A5)
 18FAC  6B02                      BMI.B     L4688
@@ -38738,8 +38746,8 @@ DT80 = . - $2
 18FB2  6AF6                      BPL.B     L4687
 18FB4  16B2 0000                 Move.B    $0(A2,D0.W), (A3) ; GCR encode D0 @sc
 18FB8  1019           L4689:     Move.B    (A1)+, D0       ; get a byte to write from A1 to D0 @sc
-18FBA  DB00                      AddX.B    D0, D5
-18FBC  BF00                      Eor.B     D7, D0
+18FBA  DB00                      AddX.B    D0, D5			2: crc0
+18FBC  BF00                      Eor.B     D7, D0			3: crc2
 18FBE  1600                      Move.B    D0, D3
 18FC0  E55B                      ROL       #$2, D3         ; save upper 2 bits in D3 @sc
 18FC2  0201 003F                 And.B     #$3F, D1
@@ -38747,8 +38755,8 @@ DT80 = . - $2
 18FC8  6AFC                      BPL.B     L4690
 18FCA  16B2 1000                 Move.B    $0(A2,D1.W), (A3) ; GCR encode D1 @sc
 18FCE  1219                      Move.B    (A1)+, D1       ; get a byte to write from A1 to D1 @sc
-18FD0  DD01                      AddX.B    D1, D6
-18FD2  BB01                      Eor.B     D5, D1
+18FD0  DD01                      AddX.B    D1, D6			4: crc1
+18FD2  BB01                      Eor.B     D5, D1			5: crc0
 18FD4  1601                      Move.B    D1, D3
 18FD6  E55B                      ROL       #$2, D3         ; save 2 more upper bits in D3 @sc
 18FD8  0202 003F                 And.B     #$3F, D2        ; mask lower 6 bits @sc
@@ -38762,6 +38770,7 @@ DT80 = . - $2
 18FEC  4A44                      Tst       D4
 18FEE  669E                      BNE.B     L4685           ; end of loop? @sc
 18FF0  4844                      Swap      D4
+
 18FF2  6698                      BNE.B     L4684           ; switch to data instead of tags @sc
 18FF4  4203                      Clr.B     D3
 18FF6  EC4B                      LsR       #$6, D3
@@ -38820,7 +38829,7 @@ DT80 = . - $2
 19082  6000 FA9E                 Bra       L4625
 19086  DEAA FFFF      DT177:     DC.B      '    '
 
-                      DT_Sony_NiblTbl:
+                      DT_Sony_NiblTbl:			;GCR encode table @gd
 1908A  9697 9A9B 9D9E            DC.B      '      '
 19090  9FA6 A7AB ACAD            DC.B      '      '
 19096  AEAF B2B3 B4B5            DC.B      '      '
