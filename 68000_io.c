@@ -8,11 +8,17 @@
 #include <string.h>
 #include <xc.h>
 
+#include "68000_PIC.h"
+
+#if defined(ST7735)
 #include "Adafruit_ST77xx.h"
 #include "Adafruit_ST7735.h"
+#endif
+#if defined(ILI9341)
+#include "Adafruit_ili9341.h"
+#endif
 #include "adafruit_gfx.h"
 
-#include "68000_PIC.h"
 
 #if MACINTOSH
 #include "gcr.h"
@@ -37,6 +43,7 @@ union __attribute__((__packed__)) DWORD_BYTE RTC;
 BYTE IPCW=255,IPCR=0, IPCData=0,IPCCnt=4,IPCState=0;
 BYTE MDVmotor=0;
 extern volatile BYTE TIMIRQ,VIDIRQ,KBDIRQ,SERIRQ,RTCIRQ,MDVIRQ;
+BYTE IRQenable=0;
 #elif MACINTOSH
 BYTE __attribute((aligned(65536))) ram_seg[RAM_SIZE];
 BYTE *rom_seg;
@@ -47,6 +54,7 @@ BYTE IWMRegR[4]={0,0x0/*status*/,0b10111111/*handshake*/,0x0/*mode*/},    // 1f 
   IWMSelect=0,    		// https://www.applefritter.com/content/iwm-reverse-engineering
   floppyState[2]={0x80,0} /* b0=stepdir,b1=disk-switch,b2=motor,b3=head,b7=diskpresent*/,
   floppyTrack=0,floppySector=0;
+WORD floppyTach=0;
 static uint8_t sectorData[1024];
 static const uint8_t sectorsPerTrack[]={
   12,12,12,12,12,12,12,12,12,12,
@@ -58,6 +66,24 @@ static const uint8_t sectorsPerTrack[]={
   9,9,9,9,9,8,8,8,8,8,
   8,8,8,8,8,8,8,8,8,8
   };
+static const uint8_t interleave_table[5][12] = {
+  {//speed group 1:
+  0,6, 1,7, 2,8, 3,9, 4,10, 5,11,
+  },
+  {//speed group 2:
+  0,6, 1,7, 2,8, 3,9, 4,10, 5,
+  },
+  {//speed group 3:
+  0,5, 1,6, 2,7, 3,8, 4,9,
+  },
+  {//speed group 4:
+  0,5, 1,6, 2,7, 3,8, 4,
+  },
+  {//speed group 5:
+  0,4, 1,5, 2,6, 3,7
+  },
+  };
+
 extern const unsigned char MACINTOSH_DISK[];
 const unsigned char *macintoshDisk=MACINTOSH_DISK;
 DWORD macintoshSectorPtr=0;
@@ -68,12 +94,13 @@ BYTE VIA1RegR[16]  = {
   VIA1RegW[16] = {
   0x8c,0x10,0x00,0x00,0x00,0x00,0x00,0x00,    // Sound, Mouse button, RTCenable; OVERLAY=1, direi
   0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
-  },VIA1ShCnt;
+  },VIA1ShCnt,VIA1IRQSet;
 //#define VIDEO_ADDRESS_BASE 0x01a700   // occhio cmq, v.
 DWORD VideoAddress[2]={0x01a700,0x012700};    // per non partire con 0!
 SWORD VICRaster=0;
 union __attribute__((__packed__)) DWORD_BYTE RTC;
 BYTE PRam[20];
+BYTE mouseState=255;
 BYTE RTCdata,RTCcount,RTCselect,RTCwp=0,RTCstate=0;
 extern volatile BYTE TIMIRQ,VIDIRQ,KBDIRQ,SCCIRQ,RTCIRQ,VIAIRQ;
 #elif MICHELEFABBRI
@@ -114,7 +141,6 @@ BYTE i8042RegR[2],i8042RegW[2];
 //#define KBStatus KBRAM[0]   // pare...
 extern BYTE Keyboard[];
 extern volatile DWORD millis;
-BYTE IRQenable=0;
 
 
 
@@ -279,11 +305,35 @@ $18000  Real-time clock byte 0  Real-time clock reset*/
       t &= 7;
       switch(t) {    // NON SI CAPISCE se ci sono 2 set di control reg A e B, e dov e il registro 0...
         case 0x0:   //  read from control register channel B specified by control register 0
+          z8530RegW[0]=0;   // v. $1a8c
+    			switch(z8530RegW[0] & 0xf) {
+            case 0:
+              break;
+            }
     			i=z8530RegR[z8530RegW[0] & 0xf];
           break;
         case 0x1:   //  write to control register channel B specified by control register 0
           break;
         case 0x2:   //  read from control register channel A specified by control register 0
+              //qua ci sarebbero i 2 assi del mouse... X1 e Y1
+    			switch(z8530RegW[0] & 0xf) {
+            case 0:
+              break;
+//X1 and Y1, are connected to the SCC's DCDA and DCDB inputs, respectively, while the quadrature signals, X2 and Y2, go to inputs of the VIA's data register B
+            case 2:
+              if(mouseState & 0b00000001)
+                z8530RegR[2] |= 0b00001000;      //X1 boh
+              else
+                z8530RegR[2] &= ~0b00001000;      //e verificare fronte/valore
+              break;
+            case 3:
+              if(mouseState & 0b00000100)
+                z8530RegR[3] |= 0b00001000;      //Y1 boh
+              else
+                z8530RegR[3] &= ~0b00001000;      //e verificare fronte/valore
+              break;
+            }
+              
     			i=z8530RegR[z8530RegW[0] & 0xf];
           break;
         case 0x3:   //  write to control register channel A specified by control register 0
@@ -399,13 +449,14 @@ The bits of the handshake register are laid out as follows:
         // control function  Be sure that and that CA0 and CA1 are set high before changing SEL
         //  nb CA2 = 4 = valore parm!
         i=((VIA1RegW[1] & 0x20) >> 2) | (IWMSelect & 7);
+        uint8_t qfloppy=(IWMSelect & 0b00100000) >> 5;
         switch(i) {   // solo i floppy 3.5, dice..
           case 0:   // DIRTN Set step direction inward (toward higher-numbered tracks.)
-            floppyState[(IWMSelect & 0b00100000) >> 5] |= 0x1;
+            floppyState[qfloppy] |= 0x1;
             break;
           case 1/*4*/:   // STEP Step one track in current direction (takes about 12 msec).
-            if(floppyState[(IWMSelect & 0b00100000) >> 5] & 0x1) {
-              if(floppyTrack<80)
+            if(floppyState[qfloppy] & 0x1) {
+              if(floppyTrack<80-1)
                 floppyTrack++;
               }
             else {
@@ -417,22 +468,22 @@ The bits of the handshake register are laid out as follows:
             
             break;
           case 2/*8*/:   // MOTORON Turn spindle motor on.
-            floppyState[(IWMSelect & 0b00100000) >> 5] |= 0x4;
+            floppyState[qfloppy] |= 0x4;
             floppySector=0;
             encodeMacSector();// serve se parto con track=0...
             break;
           case 0x4/*1*/:   // Set step direction outward (toward lower-numbered tracks.
-            floppyState[(IWMSelect & 0b00100000) >> 5] &= ~0x1;
+            floppyState[qfloppy] &= ~0x1;
             break;
           case 6/*9*/:   // Turn spindle motor off.
-            floppyState[(IWMSelect & 0b00100000) >> 5] &= ~0x4;
+            floppyState[qfloppy] &= ~0x4;
 
             break;
           case 7/*0x0d*/:  // EJECT Eject the disk. This takes about 1/2 sec to complete. The drive may not recognize further control commands until this operation is complete.
-            floppyState[(IWMSelect & 0b00100000) >> 5] &= ~0x80;
+            floppyState[qfloppy] &= ~0x80;
             break;
           case 0xc/*3*/:   // Reset disk-switched flag?  (The firmware uses this to clear disk-switched errors.)
-            floppyState[(IWMSelect & 0b00100000) >> 5] &= ~0x2;
+            floppyState[qfloppy] &= ~0x2;
             break;
           default:
             break;
@@ -450,13 +501,14 @@ The bits of the handshake register are laid out as follows:
               IWMRegR[0]=c;    // 
               }*/
               i=((VIA1RegW[1] & 0x20) >> 2) | (IWMSelect & 7);
+              uint8_t qfloppy=(IWMSelect & 0b00100000) >> 5;
               switch(i) {   // 
                 case 4/*1*/:   // RDDATA0 Instantaneous data from lower head. Reading this bit configures the drive to do I/O with the lower head.
-                  floppyState[(IWMSelect & 0b00100000) >> 5] &= ~0x8;
+                  floppyState[qfloppy] &= ~0x8;
 //                  do {
                     IWMRegR[0]=sectorData[macintoshSectorPtr++];    // skippo pad a 0 per praticità mia
 //                    } while(!IWMRegR[0]); //inutile cmq
-                  if(macintoshSectorPtr >= 710+17) { //continuano a esserci letture ciucche all'inizio e quindi si sposta di settore durante la ricerca header a $18c4a
+                  if(macintoshSectorPtr >= 710+17) { //(continuano a esserci letture ciucche all'inizio e quindi si sposta di settore durante la ricerca header a $18c4a
 //                  
                     floppySector++;
                     if(floppySector>=sectorsPerTrack[floppyTrack])
@@ -466,7 +518,7 @@ The bits of the handshake register are laid out as follows:
                   // arriva anche con 01 v. sotto
                   break;
                 case 0xc/*3*/:   // RDDATA1 Instantaneous data from upper head. Reading this bit configures the drive to do I/O with the upper head.
-                  floppyState[(IWMSelect & 0b00100000) >> 5] |= 0x8;
+                  floppyState[qfloppy] |= 0x8;
 //                  do {
                     IWMRegR[0]=sectorData[macintoshSectorPtr++];    // skippo pad a 0 per praticità mia
 //                    } while(!IWMRegR[0]);
@@ -481,6 +533,7 @@ The bits of the handshake register are laid out as follows:
                 }
             // MSB=1 indica byte valido - implicito nella conversione che faccio sotto
        			i=IWMRegR[0];    // 
+       			IWMRegR[0]=0;    // 
             }
           else {          // all ones (if drive is off)
        			i=0xff;    // 
@@ -505,9 +558,10 @@ The bits of the handshake register are laid out as follows:
             IWMRegR[1] &= ~0b00100000;
             }
           i=((VIA1RegW[1] & 0x20) >> 2) | (IWMSelect & 7);
+          uint8_t qfloppy=(IWMSelect & 0b00100000) >> 5;
           switch(i) {   // solo i floppy 3.5, dice..
             case 0:   // DIRTN Step direction. 0 = head set to step inward (toward higher-numbered tracks), 1 = head set to step outward (toward lower-numbered tracks)
-              if(!(floppyState[(IWMSelect & 0b00100000) >> 5] & 0x1))
+              if(!(floppyState[qfloppy] & 0x1))
                 IWMRegR[1] |= 0x80;
               else
                 IWMRegR[1] &= ~0x80;
@@ -519,20 +573,20 @@ The bits of the handshake register are laid out as follows:
                 IWMRegR[1] &= ~0x80;
               break;
             case 2/*8*/:   // MOTORON Motor on. 0 = spindle motor is spinning, 1 = motor is off
-              if(!(floppyState[(IWMSelect & 0b00100000) >> 5] & 0x4) /*IWMSelect & 0b00100000*/)
+              if(!(floppyState[qfloppy] & 0x4) /*IWMSelect & 0b00100000*/)
                 IWMRegR[1] |= 0x80;
               else
                 IWMRegR[1] &= ~0x80;
               break;
             case 3/*C*/:  // Disk switched?	0 = user ejected disk by pressing the eject button, 1 = disk not ejected.
-              if(floppyState[(IWMSelect & 0b00100000) >> 5] & 0x80 /*IWMSelect & 0b00100000*/)
+              if(floppyState[qfloppy] & 0x80 /*IWMSelect & 0b00100000*/)
                 IWMRegR[1] |= 0x80;
               else
                 IWMRegR[1] &= ~0x80;
               break;
             case 4/*1*/:   // RDDATA0 Instantaneous data from lower head. Reading this bit configures the drive to do I/O with the lower head.
               // v. anche VIA1RegW[1] ORA b5
-              floppyState[(IWMSelect & 0b00100000) >> 5] &= ~0x8;
+              floppyState[qfloppy] &= ~0x8;
               if(0 /**/)
                 IWMRegR[1] |= 0x80;
               else
@@ -552,13 +606,13 @@ The bits of the handshake register are laid out as follows:
                 IWMRegR[1] &= ~0x80;
               break;
             case 0x7/*F*/:  // DRVIN Drive installed. 0 = drive is connected, 1 = no drive is connected
-              if(!(floppyState[(IWMSelect & 0b00100000) >> 5] & 0x80) /* drive 0 connected, 1 no*/)
+              if(!(floppyState[qfloppy] & 0x80) /* drive 0 connected, 1 no*/)
                 IWMRegR[1] |= 0x80;
               else
                 IWMRegR[1] &= ~0x80;
               break;
             case 8/*2*/:   // CSTIN Disk in place. 0 = disk in drive, 1 = drive is empty.
-              if(!(floppyState[(IWMSelect & 0b00100000) >> 5] & 0x80) /*IWMSelect & 0b00100000*/)
+              if(!(floppyState[qfloppy] & 0x80) /*IWMSelect & 0b00100000*/)
                 IWMRegR[1] |= 0x80;
               else
                 IWMRegR[1] &= ~0x80;
@@ -576,19 +630,42 @@ The bits of the handshake register are laid out as follows:
                 IWMRegR[1] &= ~0x80;
               break;
             case 0xb/*E*/:  // TACH Tachometer.  60 pulses per disk revolution
-/*Track 00 to track 15 : 394 RPM
+            {uint32_t n;
+/*Track 00 to track 15 : 394 RPM         PWM $1FD00 sembra contenere valori tra 0x15 e 0x2b (spero, alternati con FF che dovrebbero essere audio...
   Track 16 to track 31 : 429 RPM
   Track 32 to track 47 : 472 RPM
   Track 48 to track 63 : 525 RPM
   Track 64 to track 79 : 590 RPM*/
-              if(!(millis & 4) /* verificare, da ~6/sec a 10/sec dip. da track, ossia da 360 a 600 pulses, questo va a 1600Hz */)
-                IWMRegR[1] |= 0x80;
-              else
-                IWMRegR[1] &= ~0x80;
+              switch(sectorsPerTrack[floppyTrack]) {  // (TMR3 conta fino a 1950, ogni unità=320nS
+                case 12:
+                  n=787000L/394;    //~1.5-2.5uS per count, vogliamo 2.5mS ogni tach
+                  break;
+                case 11:
+                  n=787000L/429;
+                  break;
+                case 10:
+                  n=787000L/472;
+                  break;
+                case 9:
+                  n=787000L/525;
+                  break;
+                case 8:
+                  n=787000L/590; //~1.5-2.5uS per count, vogliamo 1.6mS ogni tach
+                  break;
+                }
+              //serve 0x04000000 diviso questo
+//              if(!(millis & 8) /* verificare, da ~6/sec a 10/sec dip. da track, ossia da 360 a 600 pulses, questo va a 1600Hz */)
+              if((floppyState[qfloppy] & 0x84) == 0x84) {    // disco dentro e motore on
+                if((floppyTach/*TMR3*/ % n) > ((n/2)+(rand() & 1)))
+                  IWMRegR[1] |= 0x80;
+                else
+                  IWMRegR[1] &= ~0x80; 
+                }
+            }
               break;
             case 0xc/*3*/:   // RDDATA1 Instantaneous data from upper head. Reading this bit configures the drive to do I/O with the upper head.
               // v. anche VIA1RegW[1] ORA b5
-              floppyState[(IWMSelect & 0b00100000) >> 5] |= 0x8;
+              floppyState[qfloppy] |= 0x8;
               if(0 /**/)
                 IWMRegR[1] |= 0x80;
               else
@@ -637,7 +714,7 @@ The bits of the handshake register are laid out as follows:
     case 0xe:      // VIA, A0=0
       i=(LOWORD(t) >> 9) & 0xf;
       switch(i) {    // A9..A12
-        case 0:   // ORB
+        case 0:   // ORB IRB (questo legge i latch!
 /*    bit 7 = output: 0 to enable sound, 1 to disable
     bit 6 = input: 0 = video in display portion of scanline, 1 = hblank or vblank
     bit 5 = input: mouse Y2
@@ -653,31 +730,49 @@ The bits of the handshake register are laid out as follows:
             else
               VIA1RegR[0] |= VIA1RegW[0] & 0b00000001;
             }
-          if(!(VIA1RegW[2] & 0b00001000))    // 
-            VIA1RegR[0] |= SW1 ? 0b00001000 : 0;    // prove, occhio al reset di là
+          if(!(VIA1RegW[2] & 0b00001000)) {   // per OGNI bit andrebbe controllata direzione, 0=in 1=out
+            if(mouseState & 0b00010000)
+              VIA1RegR[0] |= 0b00001000;
+            else
+              VIA1RegR[0] &= ~0b00001000;
+            }
           else
             VIA1RegR[0] |= VIA1RegW[0] & 0b00001000;
+          
+          //(qua ci sarebbero i 2 assi del mouse... X2 e Y2
+//X1 and Y1, are connected to the SCC's DCDA and DCDB inputs, respectively, while the quadrature signals, X2 and Y2, go to inputs of the VIA's data register B
+          VIA1RegR[0] &= ~0b00110000;
+          if(mouseState & 0b00000010)
+            VIA1RegR[0] |= 0b00010000;      //X2
+          if(mouseState & 0b00001000)
+            VIA1RegR[0] |= 0b00100000;      //Y2
+
           i=VIA1RegR[0];
           break;
-        case 1:   // ORA
+        case 1:   // ORA/IRA (questo legge i pin!
         case 15:  // ORA (no handshake
     /*    bit 7 = SCC Wait/Request input
     bit 6 = Alternate screen buffer output
-    bit 5 = Floppy disk head select output; SEL
+    bit 5 = Floppy disk head select output; SEL   
     bit 4 = output: overlay ROM at 0 when 1 (enabled at reset)
     bit 3 = Alternate sound buffer output
     bits 0-2 = Sound volume output */
 //#warning          
-          VIA1RegR[1] |= 0x80;    // FORZO SCC per disco... boh
+          VIA1RegR[1] |= 0x80;    // FORZO SCC per disco... boh (credo sia per ev. byte riceviti da 232
           
           
           i=VIA1RegR[1];
           break;
-        case 0x4:  // T1 low
+        case 0x4:  // T1 low counter
           VIA1RegR[0xd] &= ~0x40;
+        case 0x6:  // 
           i=VIA1RegR[4];
           break;
-        case 0x8:  // T2 low
+        case 0x5:  // T1 high counter
+        case 0x7:  // 
+          i=VIA1RegR[5];
+          break;
+        case 0x8:  // T2 low counter
           VIA1RegR[0xd] &= ~0x20;
           i=VIA1RegR[8];
           break;
@@ -2103,7 +2198,11 @@ void PutValue(DWORD t,BYTE t1) {
         case 0x0:   //  read from control register channel B specified by control register 0
           break;
         case 0x1:   //  write to control register channel B specified by control register 0
-    			z8530RegW[z8530RegW[0] & 0xf]=t1;
+//          z8530RegW[0]=0;   //seleziona registro pare v.$1A92
+          
+          //boh
+//    			z8530RegW[z8530RegW[0] & 0xf]=t1;
+    			z8530RegW[0]=t1;
           break;
         case 0x2:   //  read from control register channel A specified by control register 0
           break;
@@ -2277,7 +2376,7 @@ The bits of the handshake register are laid out as follows:
     case 0xe:      // VIA, A0=0
       i=(LOWORD(t) >> 9) & 0xf;
       switch(i) {    // A9..A12
-        case 0:   // ORB
+        case 0:   // ORB (in lettura questo legge i latch!
 /*  bit 7 = output: 0 to enable sound, 1 to disable
     bit 6 = input: 0 = video in display portion of scanline, 1 = hblank or vblank
     bit 5 = input: mouse Y2
@@ -2397,26 +2496,40 @@ The bits of the handshake register are laid out as follows:
             RTCselect=0;
             }
           if(t1 /*VIA1RegW[0]*/ & 0b10000000) {    // sound
+#ifdef ST7735
             OC1CONbits.ON = 0;   // off
             PR2=400;
             OC1RS = PR2/2;		 // 
+#endif            
+#ifdef ILI9341
+            OC7CONbits.ON = 0;   // off
+            PR2=400;
+            OC7RS = PR2/2;		 // 
+#endif            
             }
           else {
+#ifdef ST7735
             PR2=400;    // 3906Hz 13/12/24
             OC1RS = PR2/2;		 // 
             OC1CONbits.ON = 1;   // on
+#endif            
+#ifdef ILI9341
+            PR2=400;    // 3906Hz 13/12/24
+            OC7RS = PR2/2;		 // 
+            OC7CONbits.ON = 1;   // on
+#endif            
             }
     			VIA1RegR[0]=VIA1RegW[0]=t1;
           break;
-        case 1:   // ORA
+        case 1:   // ORA (in lettura questo legge i pin!
         case 15:  // ORA (no handshake
     /*    bit 7 = SCC Wait/Request input
     bit 6 = Alternate screen buffer output
-    bit 5 = Floppy disk head select output SEL
+    bit 5 = Floppy disk head select output SEL Two purposes: selects the drive head to read/write data from either side of the disk (in double-sided drives) and plays part in drive register selection.
     bit 4 = output: overlay ROM at 0 when 1 (enabled at reset)
     bit 3 = Alternate sound buffer output
     bits 0-2 = Sound volume output */
-    			VIA1RegR[1]=VIA1RegW[1]=t1;
+    			VIA1RegR[1]= /*NON TOGLIERE cmq!*/   VIA1RegW[1]=t1;
           if(VIA1RegW[1] & 0b00010000) {    // OVERLAY, PA<4>
             VideoAddress[0]=0x61a700;
             VideoAddress[1]=0x612700;
@@ -2425,18 +2538,30 @@ The bits of the handshake register are laid out as follows:
             VideoAddress[0]=0x01a700;
             VideoAddress[1]=0x012700;
             }
-/* boh          if(VIA1RegW[1] & 0b00010000)     // disk head, PA<5>
+/*          if(VIA1RegW[1] & 0b00100000)     // disk head, PA<5>  usato per leggere status v.   Two purposes: selects the drive head to read/write data from either side of the disk (in double-sided drives) and plays part in drive register selection.
             floppyState |= 0x8;
           else
             floppyState &= ~0x8;*/
           break;
-        case 0x05:  // T1 high
-          VIA1RegR[0xd] &= ~0x40;
-    			VIA1RegW[5]=t1;
+        case 0x04:  // T1 low latch
+        case 0x06:  // idem
+    			VIA1RegW[4]=t1;
           break;
-        case 0x09:  // T2 high
+        case 0x07:  // T1 high latch
+          VIA1RegR[0xd] &= ~0x40;
+          VIA1IRQSet |= 0x40;
+    			VIA1RegR[4]=VIA1RegW[4];
+        case 0x05:  // T1 high counter/latch
+    			VIA1RegR[5]=VIA1RegW[5]=t1;
+          break;
+        case 0x08:  // T2 low latch
+    			VIA1RegW[8]=t1;
+          break;
+        case 0x09:  // T2 high latch/counter
           VIA1RegR[0xd] &= ~0x20;
-    			VIA1RegW[9]=t1;
+          VIA1IRQSet |= 0x20;
+    			VIA1RegR[9]=VIA1RegW[9]=t1;
+    			VIA1RegR[8]=VIA1RegW[8];
           break;
         case 0x0a:  // SR
           VIA1RegR[0xd] &= ~0x4;
@@ -3050,6 +3175,8 @@ void initHW(void) {
   memset(VIA1RegW,0,sizeof(VIA1RegW));
   VIA1RegW[0]=0x8c;
   VIA1RegW[1]=0x10;
+  VIA1ShCnt=0;
+  VIA1IRQSet=0;
   memset(IWMRegR,0,sizeof(IWMRegR));
   memset(IWMRegW,0,sizeof(IWMRegW));
   IWMRegR[1]=IWMRegW[1]=0b00000000; // (disco presente) viene impostato a 1F scrivendo a Mode, al boot
@@ -3076,19 +3203,40 @@ void initHW(void) {
   z8530RegW[15]=0b11111000;
   z8530RegR[1] =0b00000110;
 
-  VideoAddress[0]=0x01a700,VideoAddress[1]=0x012700;
+  VideoAddress[0]=0x01a700;
+  VideoAddress[1]=0x012700;
   VICRaster=0;
   //memset(PRam[20]; beh evidentemente no!
 
+#ifdef ST7735
   OC1CONbits.ON = 0;   // spengo buzzer/audio
   PR2 = 65535;		 // 
   OC1RS = 65535;		 // 
+#endif            
+#ifdef ILI9341
+  OC7CONbits.ON = 0;   // spengo buzzer/audio
+  PR2 = 65535;		 // 
+  OC7RS = 65535;		 // 
+#endif            
 
 #else
 #endif      
+
+  mouseState=0b11111111;    // b0-1 =X1/2; b2-3 =Y1/2; b4=button
+  
+#ifdef QL
+  TIMIRQ=VIDIRQ=KBDIRQ=SERIRQ=RTCIRQ=MDVIRQ=0;
+#elif MACINTOSH
+  TIMIRQ=VIDIRQ=KBDIRQ=SCCIRQ=RTCIRQ=VIAIRQ=0;
+#endif
+  
+  CPUPins=0 /*DoReset*/;  
 	}
 
+
 #if MACINTOSH
+
+//https://thomasw.dev/post/mac-floppy-emu/
 DWORD getMacSector(void) {
   uint8_t i;
   uint32_t n;
@@ -3100,15 +3248,38 @@ Tracks 48-63 9
 Tracks 64-79 8*/
 
   n=0;
-  for(i=0; i<floppyTrack; i++)
+  for(i=0; i<floppyTrack; i++) {
 #ifndef MACINTOSHPLUS
     n+=sectorsPerTrack[i];       // single-side
 #else
     n+=sectorsPerTrack[i]*2;     // double-side
 #endif
+    }
   if(floppyState[0] & 0x8)             // head prima sotto poi sopra, 1=sopra (v.
     n+=sectorsPerTrack[i];
+  
   n+=floppySector;
+//TR0 0-1-2- mac sorridente -3-4-5-6-7-8-9-10-11-(0)  TR1 0-1-2-3-4??  TR2 0  TR3 0-1  TR4 0  TR5 0  TR6 0
+//poi TR3 1-2-3  TR4 0    
+/* no non sembra servire...
+ *   switch(sectorsPerTrack[floppyTrack]) {
+    case 12:
+      n+=interleave_table[0][floppySector];
+      break;
+    case 11:
+      n+=interleave_table[1][floppySector];
+      break;
+    case 10:
+      n+=interleave_table[2][floppySector];
+      break;
+    case 9:
+      n+=interleave_table[3][floppySector];
+      break;
+    case 8:
+      n+=interleave_table[4][floppySector];
+      break;
+    }*/
+  
   return n;  
 	}
   

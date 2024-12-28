@@ -90,7 +90,7 @@ typedef unsigned short int GFX_COLOR;
 //#define SKYNET 1
 //#define QL 1          v. progetto
 #ifdef QL
-#define HORIZ_SIZE 128
+#define HORIZ_SIZE 128 // word, ossia 256 o 512 pixel
 #define VERT_SIZE 256
 #elif MACINTOSH
 #define HORIZ_SIZE 512
@@ -105,6 +105,7 @@ void myINTEnableSystemMultiVectoredInt(void);
 
 void ShortDelay(DWORD DelayCount);
 #define __delay_ms(n) ShortDelay(n*100000UL)
+#define __delay_us(n) ShortDelay(n*100UL)
 
 #define ClrWdt() { WDTCONbits.WDTCLRKEY=0x5743; }
 
@@ -336,8 +337,8 @@ int UpdateScreen(WORD);
 #define LED1 LATEbits.LATE4
 #define LED2 LATDbits.LATD0
 #define LED3 LATDbits.LATD11
-#define SW2  PORTFbits.RF0
-#define SW1  PORTBbits.RB0          // bah uso AREF tanto per...
+#define SW1  PORTFbits.RF0
+#define SW2  PORTBbits.RB0          // bah uso AREF tanto per...
 
 #define	LCDDCTris  TRISBbits.TRISB3				// http://attach01.oss-us-west-1.aliyuncs.com/IC/Datasheet/11009.zip?spm=a2g0o.detail.1000023.9.70352ae94rI9S1&file=11009.zip
 #define	LCDRSTTris TRISBbits.TRISB10
@@ -348,15 +349,23 @@ int UpdateScreen(WORD);
 
 #define	LCDCSTris  TRISBbits.TRISB2
 
-#define	m_LCDDCBit  LATBbits.LATB3 		// 
+#define	m_LCDDCBit  LATBbits.LATB3 		// anche touch
 #define	m_LCDRSTBit LATBbits.LATB10
-//#define	m_LCDBLBit  LATBbits.LATB12
+// non c'è #define	m_LCDBLBit  LATBbits.LATB12     DTR??
 
 #define	m_LCDRDBit  LATBbits.LATB5 		// 
 #define	m_LCDWRBit  LATBbits.LATB4 		// per LCD parallelo ILI
 #define	m_LCDSTRBit LATBbits.LATB4        // non è chiaro... m_A3_out; in pratica è WRITE
 
-#define	m_LCDCSBit  LATBbits.LATB2
+#define	m_LCDCSBit  LATBbits.LATB2      // anche touch
+
+#define m_TouchX1   PORTBbits.RB2  //AN2     // https://www.hackster.io/calogerus/arduino-uno-2-4-tft-lcd-display-shield-touch-panel-ili9341-576b1b
+//#define m_TouchX2   PORTEbits.RE6  //AN16 ev.
+#define m_TouchX2   LATEbits.LATE6  //
+#define m_TouchY1   PORTBbits.RB3  //AN3
+//#define m_TouchY2   PORTEbits.RE7  //AN15 ev.
+#define m_TouchY2   LATEbits.LATE7  //
+
 #endif
 
 #endif
